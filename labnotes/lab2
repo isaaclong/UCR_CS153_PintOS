@@ -1,0 +1,51 @@
+Project 1 breakdown:
+
+-pintos already implements: 
+    a. thread creation
+    b. thread completion
+    c. a simple scheduler
+    d. synchronization primitives
+        i.   semaphores
+        ii.  locks
+        iii. condition variables
+        iv.  optimization barriers
+
+-calls to printf can be added almost anywhere for simple debugging
+-at any given time one thread runs and all the others become inactive
+
+
+Notes from Joshua:
+
+-look at files: threads/; threads/thread.c; lib/kernel
+pseduocode for the first project and all that stuff:
+
+rewrite the following (from src/devices/timer.h):
+
+void timer_sleep (int64_t ticks) {
+    int64_t start = timer_ticks();
+    ASSERT (intr_get_level() == INTR_ON);    //making sure the interrupts are turned on, off by the end
+    while (timer_elapsed (start) < ticks) {
+        thread_yield();     //should not use thread_yield in the final implementation
+                            //might use timer_elapsed, but will not use a while loop
+    }
+}
+
+corrected(ish):
+
+void timer_sleep (int64_t ticks) {
+    //get the current thread (thread.c? thread.h?) (one line)
+    struct thread *cur_thread = thread_current();   //grabs the current thread struct
+
+    //figure out what time to awake the thread     (one line)
+    //      -via some calculation, which will be used when telling threads when to wake
+
+    ASSERT (intr_get_level() == INTR_ON);
+
+    //assign a time for when the thread should wake (couple lines, list code in lib/kernel)
+
+    //tell the thread to sleep (the function for that will stop the interrupts)
+    //      -could be thread_block() in thread.h, but that doesn't stop the timer
+    //      -after some greps, looks like intr_diable in threads/interrupt.c does the job as well
+
+    //NOTE: look carefully at the documentation to see where to turn on/off interrupts
+}
