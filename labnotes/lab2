@@ -30,6 +30,25 @@ void timer_sleep (int64_t ticks) {
     }
 }
 
+high level notes from lecture on timer_sleep():
+-lock and unlock the thread, instead of busywaiting
+    -do this using semaphores, a locking mechanism
+    -create a semaphore for the thread to wait for the timer
+    -when it's time for the thread to wake up again, we give the semaphore a signal
+-we have to create a waiting list for the timer
+    -just use the lists that are already implemented in PintOS (primitives in idkwhere)
+    -there is a sorted list implementation in PintOS already (which speeds up performance)
+    -access of the list is a critical section (this is why stopping interrupts is important, i think)
+-the thread that is sleeping is no longer running
+    -the OS periodically checks the list and wakes up the semaphore on the necessary thread
+-more details in the piazza post (to come)
+-rather than manually using thread_block() to stop the thread, you can instead use a sempahore structure that
+    does it for you
+
+notes from lecture on the second part of the assignment (scheduling):
+-move from a first come first serve ("flat") list to a priority list
+
+
 corrected(ish):
 
 void timer_sleep (int64_t ticks) {
