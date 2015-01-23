@@ -7,6 +7,8 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+// for lists
+#include "lib/kernel/list.h"
   
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -30,6 +32,30 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
+/*
+ * PROJECT 1
+ *
+ * List of processes/threads that are waiting.
+ * Using in project 1 to hold sleeping threads. Look in 
+ * lib/kernal/list.h for documentation
+ */ 
+
+static struct sleeing_thread
+{
+  // how to initialize this?
+  struct list_elem elem;
+  struct *thread;
+
+  // tick (time) at which the sleeping thread should wake up
+  int64_t wakeup_tick;
+  // Not sure if semaphore should be a member of sleeping thread, or how
+  // using semmaphores to control threads works in code yet
+  struct semaphore wake;
+}
+
+// list of sleeping threads
+static struct list sleeping_thread_list; 
+
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
@@ -37,6 +63,10 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+
+  // initializing sleeping_thread_list here because it seems appropriate. 
+  // Put it elsewhere if that makes more sense later on or this doesn't work
+  list_init (&sleeping_thread_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -89,11 +119,53 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
+  // Get current thread
+  struct thread *cur_thread = thread_current();
+  
+  // Get currrent ticks
   int64_t start = timer_ticks ();
 
+  sleeping_thread st = 
+  {
+    // not sure if list_elem needs to be initialized or not...
+    list_elem = struct list_elem *e;
+    thread = cur_thread;
+    wakeup_tick = start + ticks; // tick we should wake up on = current tick + ticks passed in
+    wake = // I don't think this is correct way to use semaphores
+  }
+
+  // Add current thread to sleeping_thread_list
+  list_push_back (&sleeping_thread_list, &sleeping_thread->elem);
+
+  // Calculate when to wake thread up/how long it sleeps
+  // timer_elapsed(start) to ticks?
+
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+
+  // a time for when the thread should wake up; lib/kernal
+  // FYI: timer ticks 100 times / second
+  // FYI: int64_t is a signed int; could be negative (and I remember there being a test for it)
+
+  // tell thread to sleep (function for this will also stop interrupts)
+  // use thread_block as discussed in lecture - look in sync.c file for how to properly use
+  // ^ if we use this we have to add semaphore into thread; use semma_up and semma_down
+  
+  // (lecture) assign the thread into some waiting queue made with the
+  // existing doubly linked list implementation kernal/list; must turn
+  // interrupts off while putting into list; should return to ready_list after 
+  // appropriate amount of time waited
+  //
+  // have list of sleeping thread; each element in list should store when it has to wake up
+  //
+  // use timer_interrupt {timer_ticks++; thread_tick(); } to wake it up 
+  // look at the list of sleeping threads, compare with current tick, if time to wake up
+  // then semma_up, then remove from sleeping list
+  //
+  // partb) will need to run highest priority thread function here? 
+
+  // Original implementation; busy-waits
+  //while (timer_elapsed (start) < ticks) 
+    //thread_yield ();
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -167,6 +239,17 @@ timer_print_stats (void)
 }
 
 /* Timer interrupt handler. */
+
+/*
+ * PROJECT 1
+ *
+ * This is what should be used to wake up the threads in the sleep queue.
+ * It should iterate through the list of sleeping threads and look at their wake-up
+ * tick time and compare that value to the current time (tick). If it's time to wake up, then
+ * semma_up() to wake thread and remove it from the list of sleeping threads.
+ *
+ * Threads will eventually need to be woken up in order of priority?
+ */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
