@@ -1,0 +1,36 @@
+Lab 3 Notes
+(Giving more hints on Project 1 timer part, and explanations of scheduler part)
+
+TIMER
+
+-I put most of the timer hints inside timer.c file comments
+
+SCHEDULING
+
+We want to run threads with high priority before threads with lower priority.
+
+Implement these functions:
+
+  set/get priority
+  another yield function (based on priority)
+  reevaluate priority (need this for priority donation)
+
+  within lock release and lock acquire functions 
+
+example:
+
+  lock on some block of code
+
+  L M H priority threads
+
+  Say low priority acquires lock first
+  Have a lock struck method that gets threads within lock
+  H donates priority to L so that it will complete fast
+
+  lock_acquire
+      _release
+
+  ...is where this code will run
+
+***TA explanation was extremely fast and pretty scattered, this was the best I could get.
+Add more/make changes if possible! I believe there is pretty good documentation on this too.
