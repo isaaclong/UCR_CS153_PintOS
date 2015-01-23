@@ -255,6 +255,9 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+  //go through the sleeping list and check everything that needs to be woken up
+  //wake if necessary
+  //either yield normally, or, if latter part of B is done, yield higher priority
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

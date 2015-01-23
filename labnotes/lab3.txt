@@ -34,3 +34,49 @@ example:
 
 ***TA explanation was extremely fast and pretty scattered, this was the best I could get.
 Add more/make changes if possible! I believe there is pretty good documentation on this too.
+
+
+Notes from Friday:
+-sema_down is preferred to thread_block (and unblock), since sema_down takes care of things
+    that thread_block will still require you to do manually
+-notes on timer_interrupt()
+
+//current look of timer_interrupt, plus TA suggestions
+timer_intterupt() {
+    tick++;    
+    thread_tick();
+    //add the below things:
+    //go through the sleeping list and check everything that needs to be awoken
+    //  (this list should probably be sorted..?)
+    //wake if necessary
+    //either yield the thread normally, or, if th altter part of part B is completed,
+    //  you can yield higher thread priority
+}
+
+
+thread_init() is called when the OS is initialized
+init_thread() is called when a new thread is created
+
+
+lock_acquire()
+
+
+foo();
+
+
+lock_release()
+
+-to add priority, we'll have to add a priority property to the thread(.h?) file, and also add the
+set and get priority functions, as well as yield priority function (make a new one, don't change
+the original because that's easier to mess up)
+-use the get_max() function in the implemented lists (aka don't need to sort)
+-get that one and push it onto the ready list
+
+priority donation:
+-add to donation list, and every time you are gonna call priority, call the function that evaluates priority
+-if you always do that, you never have to worry about wonky special cases
+
+
+
+
+
