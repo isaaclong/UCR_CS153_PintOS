@@ -1,5 +1,5 @@
 			+--------------------+
-			| CS 140             |
+			| CS 153             |
 			| PROJECT 1: THREADS |
 			| DESIGN DOCUMENT    |
 			+--------------------+
@@ -8,8 +8,8 @@
 
 >> Fill in the names and email addresses of your group members.
 
-Isaac Long   <ilong001@ucr.edu>
-Nathan LaPre <nlapr001@ucr.edu>
+Isaac Long   <ilong001@ucr.edu> <861007434>
+Nathan LaPre <nlapr001@ucr.edu> <861099695>
 
 ---- PRELIMINARIES ----
 
@@ -37,6 +37,32 @@ FirstName LastName: contribution
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+// in thread/thread.h
+struct thread 
+  {
+    tid_t tid;
+    enum thread_status status;
+    char name[16];
+    ... (things we did not change)
+
+    /* Allow compatability with sleeping_thread_list, our list of sleeping threads using
+     * the provided list type.
+     */
+    struct list_elem sleep_elem;
+
+    /* The number that indicates how long in ticks (from system start) until the thread
+     * should awake.
+     */
+    int64_t wakeup_tick;
+
+    /* Facilitates the sleep and wakeup of threads. */
+    struct semaphore is_sleeping;
+  }
+
+
+// in devices/timer.c
+/* This list keeps tract of all currently sleeping threads. */
+static struct list sleeping_thread_list;
 
 
 ---- ALGORITHMS ----
@@ -44,31 +70,41 @@ FirstName LastName: contribution
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
-We first get the current thread. Then, we get the current amount of ticks. We create
-a sleeping thread that contains the number of ticks on which to wake up. We assert that
-interrupts are currently on. 
+We first get the current thread. Then, we get the current amount of ticks. We calculate the
+time (in ticks) until the current thread should awaken.  We assert that interrupts are currently on.
+We disable interrupts, then add a the thread to the ordered list of sleeping threads. After that, 
+we reenable interrupts and sleep the current thread.
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
 
+Instead of checking the entire list, we ensure that it is always sorted from least to greatest
+wakeup time. This allows us to, rather than find the smallest element each time, simply check the
+first element of the list. If it is past the current tick counter, then we wake it. This method allows
+us to check just one element, rather than the entire list.
 
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
-We use a semaphore to enforce mutual exclusion between multiple threads, should they
-simultaneously attempt to access the critical regions of the function.
+We turn off interrupts when we add or remove from the list of sleeping threads or the list of
+ready threads. This prevents any thread from accessing the critical region while another thread
+is modifying a shared resource.
 
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
 
-(we only have the mutex at critical regions, is that even bad?)
+We turn off interrupts when we modify shared resources inside timer_sleep ().
 
 ---- RATIONALE ----
 
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+We initially thought to iterate through the entire list of sleeping threads on each timer tick,
+but later decided that we could simply maintain an ordered list, which would allow us to more
+efficiently and reliably identify the correct thread to awake. 
 
 			 PRIORITY SCHEDULING
 			 ===================

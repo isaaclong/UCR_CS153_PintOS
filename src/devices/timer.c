@@ -40,22 +40,8 @@ static void real_time_delay (int64_t num, int32_t denom);
  * lib/kernal/list.h for documentation
  */ 
 
-struct sleeping_thread
-{
-  // how to initialize this?
-  struct list_elem elem;
-  struct thread *t;
-
-  // tick (time) at which the sleeping thread should wake up
-  int64_t wakeup_tick;
-  struct semaphore is_sleeping;
-};
-
 // list of sleeping threads
 static struct list sleeping_thread_list; 
-
-// mutex for sleeping_thread_list
-struct semaphore using_sleep_list;
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -66,11 +52,7 @@ timer_init (void)
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 
   // initializing sleeping_thread_list here because it seems appropriate. 
-  // Put it elsewhere if that makes more sense later on or this doesn't work
   list_init (&sleeping_thread_list);
-
-  // initialize a semaphore to make sure only 1 thread can add/remove from list at a time 
-  sema_init (&using_sleep_list, 1);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */

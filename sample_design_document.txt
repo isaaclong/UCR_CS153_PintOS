@@ -8,9 +8,8 @@
 
 >> Fill in the names and email addresses of your group members.
 
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Isaac Long <ilong001@ucr.edu>
+Nathan LaPre <nlapr001@ucr.edu>
 
 ---- PRELIMINARIES ----
 
