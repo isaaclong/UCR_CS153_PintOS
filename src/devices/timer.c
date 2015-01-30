@@ -40,21 +40,22 @@ static void real_time_delay (int64_t num, int32_t denom);
  * lib/kernal/list.h for documentation
  */ 
 
-static struct sleeing_thread
+struct sleeping_thread
 {
   // how to initialize this?
   struct list_elem elem;
-  struct *thread;
+  struct thread *t;
 
   // tick (time) at which the sleeping thread should wake up
   int64_t wakeup_tick;
-  // Not sure if semaphore should be a member of sleeping thread, or how
-  // using semmaphores to control threads works in code yet
-  struct semaphore wake;
-}
+  struct semaphore is_sleeping;
+};
 
 // list of sleeping threads
 static struct list sleeping_thread_list; 
+
+// mutex for sleeping_thread_list
+struct semaphore using_sleep_list;
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -67,6 +68,9 @@ timer_init (void)
   // initializing sleeping_thread_list here because it seems appropriate. 
   // Put it elsewhere if that makes more sense later on or this doesn't work
   list_init (&sleeping_thread_list);
+
+  // initialize a semaphore to make sure only 1 thread can add/remove from list at a time 
+  sema_init (&using_sleep_list, 1);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -114,34 +118,57 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+bool
+sleep_list_compare (const struct list_elem *a, const struct list_elem *b, void *aux)
+{
+  struct thread *ta = list_entry(a, struct thread, sleep_elem);
+  struct thread *tb = list_entry(b, struct thread, sleep_elem);
+  return ta->wakeup_tick < tb->wakeup_tick ? true : false; 
+}
+
+void *aux;
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
 timer_sleep (int64_t ticks) 
 {
+
   // Get current thread
-  struct thread *cur_thread = thread_current();
+  struct thread *current_thread = thread_current ();
   
   // Get currrent ticks
   int64_t start = timer_ticks ();
+  printf("start ticks:" "%" PRId64 "\n",start);
+  printf("passed in ticks: %d\n",ticks);
+  current_thread->wakeup_tick = start + ticks;
 
-  sleeping_thread st = 
-  {
-    // not sure if list_elem needs to be initialized or not...
-    list_elem = struct list_elem *e;
-    thread = cur_thread;
-    wakeup_tick = start + ticks; // tick we should wake up on = current tick + ticks passed in
-    wake = // I don't think this is correct way to use semaphores
-  }
-
-  // Add current thread to sleeping_thread_list
-  list_push_back (&sleeping_thread_list, &sleeping_thread->elem);
-
-  // Calculate when to wake thread up/how long it sleeps
-  // timer_elapsed(start) to ticks?
-
+  // make sure interrupts are on up until this point
   ASSERT (intr_get_level () == INTR_ON);
 
+  enum intr_level old_level;
+
+  // disable interrupts while inserting into list
+  old_level = intr_disable ();
+  list_insert_ordered (&sleeping_thread_list, &(current_thread->sleep_elem), &sleep_list_compare, aux);
+  // reenable interrupts after insertion
+  intr_set_level (old_level);
+
+  // sleep the current thread
+  sema_down (&(current_thread->is_sleeping));
+
+  printf ("after sema_down\n");
+  //fflush (stdout);
+
+  //struct intr_frame *args;
+  
+  /* 
+  unsigned i = 0;
+  for (i; i < ticks; i++)
+  {
+    timer_interrupt (args);
+  }
+  */
+  
   // a time for when the thread should wake up; lib/kernal
   // FYI: timer ticks 100 times / second
   // FYI: int64_t is a signed int; could be negative (and I remember there being a test for it)
@@ -254,7 +281,29 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  //printf("incremented ticks\n");
   thread_tick ();
+
+  struct list_elem *e = list_begin (&sleeping_thread_list);
+  struct thread *t = list_entry (e, struct thread, sleep_elem);
+  
+  if (t->wakeup_tick >= ticks) 
+  {
+    printf("before wakeup check; ticks:%d\n", ticks);
+    // sema up to wake up
+    sema_up (&(t->is_sleeping));
+    
+    // remove from sleeping_thread_list
+    
+    enum intr_level old_level;
+    old_level = intr_disable ();
+
+    list_remove (e);
+
+    intr_set_level (old_level);
+  }
+
+  
   //go through the sleeping list and check everything that needs to be woken up
   //wake if necessary
   //either yield normally, or, if latter part of B is done, yield higher priority

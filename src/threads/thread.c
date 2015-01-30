@@ -470,6 +470,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
+
+  /* PROJECT 1 */
+  sema_init (&(t->is_sleeping), 0);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
