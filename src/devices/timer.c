@@ -120,8 +120,8 @@ timer_sleep (int64_t ticks)
   
   // Get currrent ticks
   int64_t start = timer_ticks ();
-  printf("start ticks:" "%" PRId64 "\n",start);
-  printf("passed in ticks: %d\n",ticks);
+  //printf("start ticks:" "%" PRId64 "\n",start);
+  //printf("passed in ticks: %d\n",ticks);
   current_thread->wakeup_tick = start + ticks;
 
   // make sure interrupts are on up until this point
@@ -138,7 +138,7 @@ timer_sleep (int64_t ticks)
   // sleep the current thread
   sema_down (&(current_thread->is_sleeping));
 
-  printf ("after sema_down\n");
+  //printf ("after sema_down\n");
   //fflush (stdout);
 
   //struct intr_frame *args;
@@ -271,7 +271,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
   
   if (t->wakeup_tick >= ticks) 
   {
-    printf("before wakeup check; ticks:%d\n", ticks);
+    //printf("before wakeup check; ticks:%d\n", ticks);
     // sema up to wake up
     sema_up (&(t->is_sleeping));
     

@@ -192,6 +192,12 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 {
+  /* PROJECT 1:
+   * -check if the lock has a thread in it
+   *     -compare priorities of the two threads
+   *     -if the lock-having thread's priority > current thread's priority,
+   *          -facilitate a donation
+   */
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));

@@ -20,9 +20,12 @@ Nathan LaPre <nlapr001@ucr.edu> <861099695>
 >> each member of your team. If some team members contributed significantly
 >> more or less than others (e.g. 2x), indicate that here.
 
-FirstName LastName: contribution
-FirstName LastName: contribution
-FirstName LastName: contribution
+(same contribution)
+
+Nathan LaPre: Worked with partner on all aspects of the implementation, both design and code.
+              Studied the OS source code independently.
+Isaac Long: Worked with partner on all aspects of the implementation, both design and code.
+            Studied the OS source code independently.
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
@@ -115,20 +118,71 @@ efficiently and reliably identify the correct thread to awake.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+//struct that manages priority transactions between threads
+struct donor_agreement
+{
+  struct thread *donor;                 /* priority donor thread */
+  struct thread *beneficiary;           /* prioirty beneficiary thread */
+  int donation_amount;                  /* net amount of donation */
+};
+
+//list of donor_agreements, to keep track of donations that have been made between threads.
+//Will be used to return priority.
+static struct list donor_agreement_list;
+
 >> B2: Explain the data structure used to track priority donation.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
 >> .png file.)
+
+We use a list of donor_agreement structures, which will allow us to keep track of each
+donation that occurs between threads. We not only store the thread itself, but also
+the amount donated, so that we can later return it to the relevant threads.
+
+        H
+ _______________
+|       M       |
+|    _______    |
+|   |   L   |   |
+|   |       |   |       <-- each square is representative of a critical region
+|   @@@@@@@@@   |
+|               |
+@@@@@@@@@@@@@@@@@
+
+In the diagram above:
+L has a lock, which is required by M to complete its job. M has a lock which is required by H to 
+complete its job. This situation is a sort of deadlock: L has the innermost lock, but not the priority
+it needs to be selected to run. M has the outer lock, but needs the inner lock to complete its task.
+H has no lock, but will need both. Unfortunately, it cannot get them because it has all of the priority.
+
 
 ---- ALGORITHMS ----
 
 >> B3: How do you ensure that the highest priority thread waiting for
 >> a lock, semaphore, or condition variable wakes up first?
 
+When a thread holding the lock yields, we select (with list_max ()) the blocked thread from the all
+thread list with the highest priority, and wake that one. This occurs in the scheduler.
+
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
 
+A low-priority thread L holds a lock that a higher-priority thread H wants to access. The scheduler
+has selected H to run, and H attempts to acquire the lock. H finds that L already holds the lock,
+and that L has a lower priority than H. H donates enough priority that L will have more than H, so that
+L will be picked by the scheduler to run.
+
+A low-priority thread L holds a lock that a higher-priority thread M wants to access. The medium-priority 
+thread M holds a lock that is needed by an even higher-priority thread H. M will donate enough priority to
+cause L to be scheduled, finish its job, and release its lock (the inner-most lock). L returns the donated
+priority back to M. H eventually donates enough priority to M for it to finish its job. After M returns
+that priority back to H, H can finally use the locks that were previously taken by M and L.
+
 >> B5: Describe the sequence of events when lock_release() is called
 >> on a lock that a higher-priority thread is waiting for.
+
+When lock_release() is called, if there were any donations to the thread in the lock, it returns them.
+Then, when the scheduler runs again, a higher-priority thread, should it need the lock, is selected
+to enter the locked region.
 
 ---- SYNCHRONIZATION ----
 
@@ -136,10 +190,24 @@ efficiently and reliably identify the correct thread to awake.
 >> how your implementation avoids it.  Can you use a lock to avoid
 >> this race?
 
+The current thread sets its priority to be lower. Another thread comes in and sets its priority to
+be yet lower. The first thread then yields incorrectly to the wrong thread. Our implementation
+avoids this by disabling interrupts around the region. A lock could fix this, by letting only
+one thread access the region of priority determination and yielding at a time.
+
 ---- RATIONALE ----
 
 >> B7: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+We chose this design because it integrates easily with the process of acquiring a lock with
+lock_acquire(). This design uses simple building blocks to deal with more complex processes,
+such as multiple donation and nested donation. It covers simple cases of singular donation
+with one transaction, but can also handle multiple donations across multiple locks and multiple
+processes. Our previous design used a number of lists to determine which process was
+accessing which lock, and had a far more convoluted structure to handle this data. By focusing
+on the point of lock entry (lock_aquire()), we were able to simplify our solution and cover
+more possible cases.
 
 			  ADVANCED SCHEDULER
 			  ==================

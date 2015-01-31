@@ -71,6 +71,18 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+
+/* PROJECT 1: Added a comparator function to use for list_max, as well as a void aux variable. */
+bool
+ready_list_compare (const struct list_elem *a, const struct list_elem *b, void *aux)
+{
+  struct thread *ta = list_entry(a, struct thread, sleep_elem);
+  struct thread *tb = list_entry(b, struct thread, sleep_elem);
+  return ta->priority > tb->priority ? true : false; 
+}
+
+void *aux;
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -247,6 +259,10 @@ thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
+  /* PROJECT 1: TODO: get the max of the ready list, check it against the priority of t */
+  //get the max
+  //check if greater or whatever
+  //    yield if so
   intr_set_level (old_level);
 }
 
@@ -322,6 +338,24 @@ thread_yield (void)
   intr_set_level (old_level);
 }
 
+/* Yields the CPU.  The current thread is not put to sleep and
+   may be scheduled again immediately at the scheduler's whim. */
+void
+thread_yield2 (void) 
+{
+  struct thread *cur = thread_current ();
+  enum intr_level old_level;
+  
+  ASSERT (!intr_context ());
+
+  old_level = intr_disable ();
+  if (cur != idle_thread) 
+    list_push_back (&ready_list, &cur->elem);
+  cur->status = THREAD_READY;
+  schedule ();
+  intr_set_level (old_level);
+}
+
 /* Invoke function 'func' on all threads, passing along 'aux'.
    This function must be called with interrupts off. */
 void
@@ -344,6 +378,16 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  /* TODO:
+   * disable interrupts
+   * if the current thread no longer has the highest priority, yield 
+   */
+  struct list_elem *e = list_max (&ready_list, &ready_list_compare, aux);
+  list_remove (e);
+  struct thread *t = list_entry (e, struct thread, elem); //gives the thread itself
+  if (t->priority < thread_current ()->priority) {
+      thread_yield2 ();
+  }
 }
 
 /* Returns the current thread's priority. */
@@ -351,6 +395,7 @@ int
 thread_get_priority (void) 
 {
   return thread_current ()->priority;
+  /* TODO: in the presence of priority donation, returns the donated (higher) priority */
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -432,7 +477,7 @@ kernel_thread (thread_func *function, void *aux)
   function (aux);       /* Execute the thread function. */
   thread_exit ();       /* If function() returns, kill the thread. */
 }
-
+
 /* Returns the running thread. */
 struct thread *
 running_thread (void) 
@@ -499,7 +544,14 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  {
+    /* PROJECT 1: instead of popping front, instead get the max element */
+    struct list_elem *e = list_max (&ready_list, &ready_list_compare, aux);
+    list_remove (e);
+    return list_entry (e, struct thread, elem); //gives the thread itself
+    
+    //return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page

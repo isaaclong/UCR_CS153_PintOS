@@ -42,14 +42,14 @@ Notes from Friday:
 -notes on timer_interrupt()
 
 //current look of timer_interrupt, plus TA suggestions
-timer_intterupt() {
+timer_interrupt() {
     tick++;    
     thread_tick();
     //add the below things:
     //go through the sleeping list and check everything that needs to be awoken
     //  (this list should probably be sorted..?)
     //wake if necessary
-    //either yield the thread normally, or, if th altter part of part B is completed,
+    //either yield the thread normally, or, if the latter part of part B is completed,
     //  you can yield higher thread priority
 }
 
@@ -77,6 +77,48 @@ priority donation:
 -if you always do that, you never have to worry about wonky special cases
 
 
+done:
+-priority property in thread.h thread struct (already there)
+-TODO: implement set/get_priority function, yield_priority apparently exists,
+but i have yet to find it.
+-added thread_yield2, an exact clone of thread_yield, to thread.h and thread.c
+-TODO: add stuff at the end of the interrupt function which determines which
+thread to run
+
+
+thinkin':
+-go to the point that threads are added to the ready list (thread_init?)
+    -in that function, call get_max_elem or whatever and test if the new
+     thread is of greater priority than the currently runnning thread
+    -if that's the case, we need to switch the processor to the new one (how
+     is that done? I think maybe we thread_block the currently running one and
+     thread_unblock the other one)
+-go to the point when threads wait for access to something (i think this might
+ be related to thread_sleep in some way and awaken the highest priority thread)
+    -
+
+
+things that i overheard josh telling people about:
+
+when priority can change (aka when you need to determine priority again):
+    -create a thread
+        -is it automatically placed on the ready list? get_max to get highest
+         priority to run
+    -finish a thread (pretty much taken care of for you) thread_block or yield
+     calls schedule, calls something else, ...
+        -if priority stuff is done in there, when the thread finishes, you
+         just call that
+    -when you set priority
+
+
+call unblock, and check which has the highest priority. i have no idea what
+function this is supposed to be in.
+
+when you call the lock and all threads realize that some thread l has the lock, they're
+all waiting for l
 
 
 
+QUESTION LIST: 
+
+ii.
