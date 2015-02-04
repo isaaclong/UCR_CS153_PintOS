@@ -112,6 +112,17 @@ struct thread
     bool is_beneficiary;
   };
 
+/* PROJECT 1: struct that manages priority transactions between threads */
+struct donor_agreement
+{
+  struct thread *donor;                 /* priority donor thread */
+  struct thread *beneficiary;           /* prioirty beneficiary thread */
+  int donation_amount;                  /* net amount of donation */
+  struct list_elem da_elem;             /* List element. */
+};
+/* list that holds above structs */
+static struct list donor_agreement_list;
+
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */

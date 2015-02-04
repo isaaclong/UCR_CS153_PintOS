@@ -71,16 +71,6 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
-/* PROJECT 1: struct that manages priority transactions between threads */
-struct donor_agreement
-{
-  struct thread *donor;                 /* priority donor thread */
-  struct thread *beneficiary;           /* prioirty beneficiary thread */
-  int donation_amount;                  /* net amount of donation */
-  struct list_elem da_elem;                /* List element. */
-};
-
-static struct list donor_agreement_list;
 
 /* PROJECT 1: Added a comparator function to use for list_max, as well as a void aux variable. */
 bool

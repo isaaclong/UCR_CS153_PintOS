@@ -31,6 +31,8 @@
 #include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+/*Project 1*/
+//#include "threads/thread.c"
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -201,6 +203,19 @@ lock_acquire (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
+
+  /* The following block of code causes kernel panic 
+
+  if (lock->holder->priority < thread_current ()->priority)
+  {
+     struct donor_agreement da;
+     da.donor = thread_current ();
+     da.beneficiary = lock->holder;
+     da.donation_amount = thread_current ()->priority - lock->holder->priority;
+     list_push_back (&donor_agreement_list, &da.da_elem);
+  }
+
+  */
 
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
