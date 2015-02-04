@@ -71,6 +71,16 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+/* PROJECT 1: struct that manages priority transactions between threads */
+struct donor_agreement
+{
+  struct thread *donor;                 /* priority donor thread */
+  struct thread *beneficiary;           /* prioirty beneficiary thread */
+  int donation_amount;                  /* net amount of donation */
+  struct list_elem da_elem;                /* List element. */
+};
+
+static struct list donor_agreement_list;
 
 /* PROJECT 1: Added a comparator function to use for list_max, as well as a void aux variable. */
 bool
@@ -82,6 +92,7 @@ ready_list_compare (const struct list_elem *a, const struct list_elem *b, void *
 }
 
 void *aux;
+
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -379,23 +390,47 @@ thread_set_priority (int new_priority)
 {
   thread_current ()->priority = new_priority;
   /* TODO:
-   * disable interrupts
-   * if the current thread no longer has the highest priority, yield 
+   * [X] disable interrupts
+   * [X] if the current thread no longer has the highest priority, yield 
    */
-  struct list_elem *e = list_max (&ready_list, &ready_list_compare, aux);
+
+  enum intr_level old_level;
+  old_level = intr_disable ();
+  struct list_elem *e = list_max (&ready_list, &ready_list_compare, aux); //highest priority thread
   list_remove (e);
-  struct thread *t = list_entry (e, struct thread, elem); //gives the thread itself
+  struct thread *t = list_entry (e, struct thread, elem);
   if (t->priority < thread_current ()->priority) {
       thread_yield2 ();
   }
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
+  /* TODO: in the presence of priority donation, returns the donated (higher) priority
+   * if list of donation_transactions is non-empty, there is donation present
+   * I think you don't have to disable interrupts to do this. Maybe.
+   */
+  if (!list_empty (&donor_agreement_list)) {
+      struct list_elem *e;
+      //loop through the list, find the correct thread agreement (based on tid)
+      for (e = list_begin (&donor_agreement_list); e != list_end (&donor_agreement_list);
+           e = list_next (e))
+      {
+          struct donor_agreement *da = list_entry (e, struct donor_agreement, da_elem); //elem? not sure    
+          if (da->donor->tid == thread_current ()->tid)
+          {
+              return thread_current ()->priority;
+          }
+          else if (da->beneficiary->tid == thread_current ()->tid)
+          {
+              return da->beneficiary->priority;
+          }
+      }
+  }
   return thread_current ()->priority;
-  /* TODO: in the presence of priority donation, returns the donated (higher) priority */
 }
 
 /* Sets the current thread's nice value to NICE. */

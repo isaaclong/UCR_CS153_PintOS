@@ -106,6 +106,10 @@ struct thread
     struct list_elem sleep_elem;
     int64_t wakeup_tick;
     struct semaphore is_sleeping;
+
+    /* indicated what the thread is with regard to priority donation */
+    bool is_donor;
+    bool is_beneficiary;
   };
 
 /* If false (default), use round-robin scheduler.
