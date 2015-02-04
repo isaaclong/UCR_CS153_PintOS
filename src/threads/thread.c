@@ -518,6 +518,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
   /* PROJECT 1 */
   sema_init (&(t->is_sleeping), 0);
+  t->wakeup_tick = -1;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
