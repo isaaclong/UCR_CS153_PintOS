@@ -294,10 +294,10 @@ timer_interrupt (struct intr_frame *args UNUSED)
   //printf("ticks: %d\n",ticks);
   thread_tick ();
 
-  struct list_elem *e;
-  
   enum intr_level old_level;
   old_level = intr_disable();
+  
+  struct list_elem *e;
 
   //ASSERT (intr_get_level () == INTR_OFF);
 
@@ -307,6 +307,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
     struct thread *t = list_entry (e, struct thread, sleep_elem);
     if(t->wakeup_tick > 0 && ticks >= t->wakeup_tick)
     {
+
       //printf("\nAbout to wake thread with tid: %d\nat %"PRId64" ticks\n", t->tid, timer_ticks());
       // sema up to wake up
       sema_up (&(t->is_sleeping));

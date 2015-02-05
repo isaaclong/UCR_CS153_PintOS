@@ -118,9 +118,10 @@ struct donor_agreement
   struct thread *donor;                 /* priority donor thread */
   struct thread *beneficiary;           /* prioirty beneficiary thread */
   int donation_amount;                  /* net amount of donation */
-  struct list_elem da_elem;             /* List element. */
+  struct list_elem da_elem;             /* list element */
 };
-/* list that holds above structs */
+
+/* list that holds donor_agreements */
 static struct list donor_agreement_list;
 
 /* If false (default), use round-robin scheduler.

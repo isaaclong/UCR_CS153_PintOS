@@ -204,21 +204,24 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  /* The following block of code causes kernel panic 
-
-  if (lock->holder->priority < thread_current ()->priority)
+  // The following block of code causes kernel panic 
+  
+  enum intr_level old_level = intr_disable ();
+//  printf ("lock->holder->priority: %d\n", lock->holder->priority);
+//  printf ("thread_current ()->priority: %d\n", thread_current ()->priority);
+  if (lock->holder && (lock->holder->priority < thread_current ()->priority))
   {
      struct donor_agreement da;
-     da.donor = thread_current ();
+     struct thread *t = thread_current ();
+     da.donor = t;
      da.beneficiary = lock->holder;
      da.donation_amount = thread_current ()->priority - lock->holder->priority;
-     list_push_back (&donor_agreement_list, &da.da_elem);
+     list_push_back (&donor_agreement_list, &(da.da_elem));
+     lock->holder->priority = thread_current ()->priority;
   }
-
-  */
-
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+  intr_set_level (old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false

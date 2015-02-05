@@ -379,7 +379,7 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
-  /* TODO:
+  /* PROJECT 1:
    * [X] disable interrupts
    * [X] if the current thread no longer has the highest priority, yield 
    */
@@ -387,9 +387,12 @@ thread_set_priority (int new_priority)
   enum intr_level old_level;
   old_level = intr_disable ();
   struct list_elem *e = list_max (&ready_list, &ready_list_compare, aux); //highest priority thread
-  list_remove (e);
-  struct thread *t = list_entry (e, struct thread, elem);
-  if (t->priority < thread_current ()->priority) {
+  //list_remove (e);
+  struct thread *max = list_entry (e, struct thread, elem);
+  if (max->priority > thread_current ()->priority) 
+  {
+      //printf ("thread %d of priority %d is yielding to thread %d of priority %d", 
+      //        thread_current ()->tid, thread_current ()->priority, max->tid, max->priority);
       thread_yield2 ();
   }
   intr_set_level (old_level);
@@ -404,6 +407,7 @@ thread_get_priority (void)
    * I think you don't have to disable interrupts to do this. Maybe.
    */
   if (!list_empty (&donor_agreement_list)) {
+      printf ("donor agreement list is not empty (miraculously)");
       struct list_elem *e;
       //loop through the list, find the correct thread agreement (based on tid)
       for (e = list_begin (&donor_agreement_list); e != list_end (&donor_agreement_list);
@@ -420,6 +424,7 @@ thread_get_priority (void)
           }
       }
   }
+  printf ("donor agreement list is empty (aw)");
   return thread_current ()->priority;
 }
 
@@ -544,6 +549,7 @@ init_thread (struct thread *t, const char *name, int priority)
   /* PROJECT 1 */
   sema_init (&(t->is_sleeping), 0);
   t->wakeup_tick = -1;
+  list_init (&donor_agreement_list);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
