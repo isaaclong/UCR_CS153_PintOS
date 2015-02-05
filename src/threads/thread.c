@@ -71,6 +71,7 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+void *aux;
 
 /* PROJECT 1: Added a comparator function to use for list_max, as well as a void aux variable. */
 bool
@@ -81,7 +82,6 @@ ready_list_compare (const struct list_elem *a, const struct list_elem *b, void *
   return ta->priority > tb->priority ? true : false; 
 }
 
-void *aux;
 
 
 /* Initializes the threading system by transforming the code
@@ -258,8 +258,18 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
+
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
+
+  struct list_elem *e;
+  for (e = list_begin (&ready_list); e != list_end (&ready_list); 
+       e = list_next(e))
+  {
+      struct thread *t = list_entry (e, struct thread, elem);
+      //printf ("priority: %d\n", t->priority);
+  }
+  //printf ("----------------------------------------------------------------\n");
   /* PROJECT 1: TODO: get the max of the ready list, check it against the priority of t */
   //get the max
   //check if greater or whatever
@@ -333,7 +343,10 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
+  {
+    //list_insert_ordered (&ready_list, &(cur->elem), &ready_list_compare, aux);
     list_push_back (&ready_list, &cur->elem);
+  }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -378,12 +391,15 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
+  //printf ("BEFORE: thread_current ()->priority: %d\n",thread_current ()->priority);
+  //printf ("threadid: %d\n",thread_current ()->tid);
   thread_current ()->priority = new_priority;
+  //printf ("AFTER: thread_current ()->priority: %d\n",thread_current ()->priority);
+  //printf ("threadid: %d\n",thread_current ()->tid);
   /* PROJECT 1:
    * [X] disable interrupts
    * [X] if the current thread no longer has the highest priority, yield 
    */
-
   enum intr_level old_level;
   old_level = intr_disable ();
   struct list_elem *e = list_max (&ready_list, &ready_list_compare, aux); //highest priority thread
@@ -578,11 +594,11 @@ next_thread_to_run (void)
   else
   {
     /* PROJECT 1: instead of popping front, instead get the max element */
-    struct list_elem *e = list_max (&ready_list, &ready_list_compare, aux);
-    list_remove (e);
-    return list_entry (e, struct thread, elem); //gives the thread itself
+    //struct list_elem *e = list_max (&ready_list, &ready_list_compare, aux);
+    //list_remove (e);
+    //return list_entry (e, struct thread, elem); //gives the thread itself
     
-    //return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    return list_entry (list_pop_front (&ready_list), struct thread, elem);
   }
 }
 

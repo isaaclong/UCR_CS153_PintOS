@@ -43,6 +43,7 @@ static void real_time_delay (int64_t num, int32_t denom);
 
 // list of sleeping threads
 static struct list sleeping_thread_list; 
+//extern struct list ready_list;
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -104,18 +105,18 @@ timer_elapsed (int64_t then)
 bool
 sleep_list_compare (const struct list_elem *a, const struct list_elem *b, void *aux)
 {
-  struct thread *ta = list_entry(a, struct thread, sleep_elem);
-  struct thread *tb = list_entry(b, struct thread, sleep_elem);
+  struct thread *ta = list_entry (a, struct thread, sleep_elem);
+  struct thread *tb = list_entry (b, struct thread, sleep_elem);
 
-  if(ta->wakeup_tick < tb->wakeup_tick) return true;
-  else if(ta->wakeup_tick > tb->wakeup_tick) return false;
+  if (ta->wakeup_tick < tb->wakeup_tick) return true;
+  else if (ta->wakeup_tick > tb->wakeup_tick) return false;
   // if wakeup times are the same, sleeping_thread_lsit should order by priority
-  else if(ta->wakeup_tick == tb->wakeup_tick) 
+  else if (ta->wakeup_tick == tb->wakeup_tick) 
   {
     //printf("choosing to wakeup next thread based on priority\n");
     // making this <= for now to cover all cases, may need seperate == case later
-    if(ta->priority <= tb->priority) return false;
-    else if(ta->priority > tb->priority) return true;
+    if (ta->priority <= tb->priority) return false;
+    else if (ta->priority > tb->priority) return true;
   }
   //return ta->wakeup_tick < tb->wakeup_tick ? true : false; 
 }
@@ -149,8 +150,6 @@ timer_sleep (int64_t ticks)
 
   // reenable interrupts after insertion
   intr_set_level (old_level);
-  /* EXPERIMENTAL CHANGE */
-  //intr_enable();
 
   //printf("\nAbout to sleep thread with tid: %d\nwith wakeup tick:%"PRId64"\n", current_thread->tid, current_thread->wakeup_tick);
   // sleep the current thread
@@ -294,29 +293,33 @@ timer_interrupt (struct intr_frame *args UNUSED)
   //printf("ticks: %d\n",ticks);
   thread_tick ();
 
-  enum intr_level old_level;
-  old_level = intr_disable();
+  enum intr_level old_level = intr_disable();
   
   struct list_elem *e;
 
   //ASSERT (intr_get_level () == INTR_OFF);
+ /*
+  for (e = list_begin (&ready_list); e != list_end (&ready_list); 
+       e = list_next(e))
+  {
+      struct thread *t = list_entry (e, struct thread, elem);
+      printf ("priority: %d\n", t->priority);
+  }
+*/
 
   for (e = list_begin (&sleeping_thread_list); e != list_end (&sleeping_thread_list); 
        e = list_next(e))
   {
     struct thread *t = list_entry (e, struct thread, sleep_elem);
+    //printf ("priority (sleeping thread list): %d\nI am thread: %d\n", t->priority, t->tid);
     if(t->wakeup_tick > 0 && ticks >= t->wakeup_tick)
     {
-
       //printf("\nAbout to wake thread with tid: %d\nat %"PRId64" ticks\n", t->tid, timer_ticks());
       // sema up to wake up
       sema_up (&(t->is_sleeping));
       //printf("\nJust woke thread with tid: %d\nand priority: %d\n", t->tid, t->priority);
 
       // remove from sleeping_thread_list with interrupts disabled
-      enum intr_level old_level;
-      old_level = intr_disable ();
-
       list_remove (e);
     }
     // will only need to loop if first wakeup time is ready AND 
@@ -324,6 +327,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
     else 
       break;
   }
+  //printf ("-------------------------------------------------------\n");
 
   intr_set_level (old_level);
 

@@ -124,6 +124,10 @@ struct donor_agreement
 /* list that holds donor_agreements */
 static struct list donor_agreement_list;
 
+/* List of processes in THREAD_READY state, that is, processes
+   that are ready to run but not actually running. */
+//static struct list ready_list;
+
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
