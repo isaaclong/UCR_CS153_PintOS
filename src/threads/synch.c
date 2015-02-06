@@ -222,8 +222,8 @@ lock_acquire (struct lock *lock)
      lock->holder->donation_lock = lock;
      //printf("lock->holder->priority: %d\n", lock->holder->priority);
 
-     add_to_ready_list(t);
-     printf("added to ready list\n");
+     //add_to_ready_list(t);
+     //printf("added to ready list\n");
   }
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
@@ -265,7 +265,7 @@ lock_release (struct lock *lock)
   {
     lock->holder->priority -= lock->holder->priority_recieved;
 
-    printf("thread %d with priority %d subtracted %d priority\n", lock->holder->tid, lock->holder->priority, lock->holder->priority_recieved);
+    //printf("thread %d with priority %d subtracted %d priority\n", lock->holder->tid, lock->holder->priority, lock->holder->priority_recieved);
 
     lock->holder->priority_recieved = 0;
     

@@ -271,7 +271,7 @@ thread_unblock (struct thread *t)
 {
   struct list_elem *a;
 
-  print_ready_list();
+  //print_ready_list();
 
   enum intr_level old_level;
 
@@ -290,11 +290,11 @@ thread_unblock (struct thread *t)
   struct thread *max = list_entry (e, struct thread, elem);
   if (thread_current()->priority != 0 && max->priority >= thread_current ()->priority) 
   {
-      printf("unblocking...\n");
+      //printf("unblocking...\n");
       //printf ("unblock: thread %d of priority %d is yielding to thread %d of priority %d\n", 
       //        thread_current ()->tid, thread_current ()->priority, max->tid, max->priority);
       thread_yield2 ();
-      printf("unblocking2...\n");
+      //printf("unblocking2...\n");
   }
 
   intr_set_level (old_level);
