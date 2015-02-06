@@ -106,10 +106,10 @@ struct thread
     struct list_elem sleep_elem;
     int64_t wakeup_tick;
     struct semaphore is_sleeping;
-
+    
+    int priority_recieved;
+    struct lock *donation_lock;
     /* indicated what the thread is with regard to priority donation */
-    bool is_donor;
-    bool is_beneficiary;
   };
 
 /* PROJECT 1: struct that manages priority transactions between threads */
@@ -165,4 +165,5 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+void add_to_ready_list (struct thread *t);
 #endif /* threads/thread.h */
