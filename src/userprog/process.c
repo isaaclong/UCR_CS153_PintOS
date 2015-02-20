@@ -21,6 +21,32 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+struct exec_helper
+{
+    const char *file_name;    /* program to load */
+        //add semaphore for loading (for resource race cases)
+        //add bool for determining if program loaded successfully
+        //add other stuff to transfer between process_execute and process_start
+        //  hint: need a way to add to the child's list, wee [sic] below about thread's child list
+};
+
+/* Pushes the SIZE bytes in BUF onto the stack in KPAGE, whose page-
+ * relative stack pointer is *OFS, and then adjusts *OFS appropriately.
+ * They bytes pushed are rounded to a 32-bit boundary.
+ *
+ * If successful, returns a pointer to the newly pushed object.
+ * On failure, returns a null pointer. */
+
+static void *
+push (uint8_t *kpage, size_t *ofs, const void *buf, size_t size)
+{
+    size_t padsize = ROUND_UP (size, sizeof (uint32_t));
+    if (*ofs < padsize) return NULL;
+    *ofs -= padsize;
+    memcpy (kpage + *ofs + (padsize - size), buf, size);
+    return kpage + *ofs + (padsize - size);
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -28,9 +54,16 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 tid_t
 process_execute (const char *file_name) 
 {
-  char *fn_copy;
+  //struct exec_helper exec;
+  //char thread_name[16];
+  char *fn_copy; //suggested deletion on this line
   tid_t tid;
 
+  //set exec file name here
+  //initialize a semaphore for loading here
+
+
+  /* SUGGESTED: REMOVE THE BELOW FROM HERE ----------------*/
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -38,10 +71,19 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  /* UNTIL HERE ------------------- */
+
+  //add program name to thread_name, watch out for the size, strtok_r....
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy); //remove fn_copy, add exec to the end of these params, a void is allowed. look in thread_create kf->aux is set to thread_create aux which would be exec. So make good use of exec helper!
+  if (tid == TID_ERROR) // change to !=
+  {
+    //down a semaphore for loading (where should you up it?)
+    //if program loaded successfully, add new child to the list of this thread's children (mind list_elems)...we need to check this list in process wait, when children are done, process wait can finish, see process wait
+    //else TID_ERROR
+    palloc_free_page (fn_copy); //suggested: remove this line
+  }
   return tid;
 }
 
@@ -206,13 +248,15 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (const char *file_name, void (**eip) (void), void **esp) 
+load (const char *file_name, void (**eip) (void), void **esp)  //change file name to cmd_line
 {
   struct thread *t = thread_current ();
+  //char file_name[NAME_MAX+2]; //add a file name variable here, the file_name and cmd_line are different
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
   off_t file_ofs;
   bool success = false;
+  //char* charPointer;  //added for parsing
   int i;
 
   /* Allocate and activate page directory. */
@@ -221,13 +265,27 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  //use strtok_r to remove file_name from cmd_line
+  
+
+
+
+
+
+
+
+
+
+  //end of implied blank space
+
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (file_name);  // set the thread's bin file to this as well! it is super helpful to have each thread have a pointer to the file they are using for when you need to close it in process_exit
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
+        //disable file write for 'file' here. GO TO BOTTOM. DON'T CHANGE ANYTHING IN THESE IF AND FOR STATEMENTS
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -302,7 +360,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp))  // add cmd_line to setup_stack param here, also change setup_stack
     goto done;
 
   /* Start address. */
@@ -312,7 +370,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  file_close (file);        //remove this!!!!!!!! (yes eight) since thread has its own file, clsoe it when process is done (hint: in process exit)
   return success;
 }
 
