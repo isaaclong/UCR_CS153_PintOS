@@ -71,36 +71,6 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
-void add_to_ready_list (struct thread *t)
-{
-  list_push_back (&ready_list, &t->elem);
-}
-
-void print_ready_list ()
-{
-  struct list_elem *e;
-  for (e = list_begin (&ready_list); e != list_end (&ready_list); 
-       e = list_next(e))
-  {
-      struct thread *t = list_entry (e, struct thread, elem);
-      printf ("thread %d with priority: %d\n",t->tid, t->priority);
-  }
-  printf ("----------------------------------------------------------------\n");
-}
-
-void *aux;
-
-/* PROJECT 1: Added a comparator function to use for list_max, as well as a void aux variable. */
-bool
-ready_list_compare (const struct list_elem *a, const struct list_elem *b, void *aux)
-{
-  struct thread *ta = list_entry(a, struct thread, sleep_elem);
-  struct thread *tb = list_entry(b, struct thread, sleep_elem);
-  return ta->priority > tb->priority ? true : false; 
-}
-
-
-
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -269,51 +239,15 @@ thread_block (void)
 void
 thread_unblock (struct thread *t) 
 {
-  struct list_elem *a;
-
-  //print_ready_list();
-
   enum intr_level old_level;
 
   ASSERT (is_thread (t));
 
-
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
-  
-  struct list_elem *e = list_max (&ready_list, &ready_list_compare, aux); //highest priority thread
-  
-  //list_remove (e);
-  struct thread *max = list_entry (e, struct thread, elem);
-  if (thread_current()->priority != 0 && max->priority >= thread_current ()->priority) 
-  {
-      //printf("unblocking...\n");
-      //printf ("unblock: thread %d of priority %d is yielding to thread %d of priority %d\n", 
-      //        thread_current ()->tid, thread_current ()->priority, max->tid, max->priority);
-      thread_yield2 ();
-      //printf("unblocking2...\n");
-  }
-
   intr_set_level (old_level);
-
-  /*
-  struct list_elem *e;
-  for (e = list_begin (&ready_list); e != list_end (&ready_list); 
-       e = list_next(e))
-  {
-      struct thread *t = list_entry (e, struct thread, elem);
-      //printf ("priority: %d\n", t->priority);
-  }
-  //printf ("----------------------------------------------------------------\n");
-  //
-  */
-  /* PROJECT 1: TODO: get the max of the ready list, check it against the priority of t */
-  //get the max
-  //check if greater or whatever
-  //    yield if so
 }
 
 /* Returns the name of the running thread. */
@@ -382,41 +316,6 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-  {
-    //list_insert_ordered (&ready_list, &(cur->elem), &ready_list_compare, aux);
-    list_push_back (&ready_list, &cur->elem);
-  }
-  cur->status = THREAD_READY;
-  schedule ();
-  intr_set_level (old_level);
-}
-
-/* Yields the CPU.  The current thread is not put to sleep and
-   may be scheduled again immediately at the scheduler's whim. */
-void
-thread_yield2 (void) 
-{
-  /*
-  struct list_elem *e;
-  for (e = list_begin (&ready_list); e != list_end (&ready_list); 
-       e = list_next(e))
-  {
-      struct thread *t = list_entry (e, struct thread, elem);
-      printf ("priority: %d\n", t->priority);
-  }
-  printf ("----------------------------------------------------------------\n");
-  */
-
-
-  struct thread *cur = thread_current ();
-  enum intr_level old_level;
-  
-  //printf("yield2\n");
-  ASSERT (!intr_context ());
-
-  old_level = intr_disable ();
-  if (cur != idle_thread) 
-    // TODO: make this insert_ordered instead of just push_back?
     list_push_back (&ready_list, &cur->elem);
   cur->status = THREAD_READY;
   schedule ();
@@ -444,56 +343,13 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  // going to try to disable interrupts earlier
-  enum intr_level old_level;
-  old_level = intr_disable ();
-  //printf ("BEFORE: thread_current ()->priority: %d\n",thread_current ()->priority);
-  //printf ("setting priority. Cur threadid: %d\n",thread_current ()->tid);
   thread_current ()->priority = new_priority;
-  //printf ("AFTER: thread_current ()->priority: %d\n",thread_current ()->priority);
-  //printf ("threadid: %d\n",thread_current ()->tid);
-  /* PROJECT 1:
-   * [X] disable interrupts
-   * [X] if the current thread no longer has the highest priority, yield 
-   */
-  struct list_elem *e = list_max (&ready_list, &ready_list_compare, aux); //highest priority thread
-  //list_remove (e);
-  struct thread *max = list_entry (e, struct thread, elem);
-  if (max->priority >= thread_current ()->priority) 
-  {
-      //printf ("setpri: thread %d of priority %d is yielding to thread %d of priority %d\n", 
-       //       thread_current ()->tid, thread_current ()->priority, max->tid, max->priority);
-      thread_yield2 ();
-  }
-  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
-  /* TODO: in the presence of priority donation, returns the donated (higher) priority
-   * if list of donation_transactions is non-empty, there is donation present
-   * I think you don't have to disable interrupts to do this. Maybe.
-   */
-  if (!list_empty (&donor_agreement_list)) {
-      //printf ("donor agreement list is not empty (miraculously)");
-      struct list_elem *e;
-      //loop through the list, find the correct thread agreement (based on tid)
-      for (e = list_begin (&donor_agreement_list); e != list_end (&donor_agreement_list);
-           e = list_next (e))
-      {
-          struct donor_agreement *da = list_entry (e, struct donor_agreement, da_elem); //elem? not sure    
-          if (da->donor->tid == thread_current ()->tid)
-          {
-              return thread_current ()->priority;
-          }
-          else if (da->beneficiary->tid == thread_current ()->tid)
-          {
-              return da->beneficiary->priority;
-          }
-      }
-  }
   return thread_current ()->priority;
 }
 
@@ -576,7 +432,7 @@ kernel_thread (thread_func *function, void *aux)
   function (aux);       /* Execute the thread function. */
   thread_exit ();       /* If function() returns, kill the thread. */
 }
-
+
 /* Returns the running thread. */
 struct thread *
 running_thread (void) 
@@ -614,13 +470,6 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
-
-  /* PROJECT 1 */
-  sema_init (&(t->is_sleeping), 0);
-  t->wakeup_tick = -1;
-  t->priority_recieved = 0;
-  t->donation_lock = NULL;
-  list_init (&donor_agreement_list);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -647,15 +496,7 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-  {
-    /* PROJECT 1: instead of popping front, instead get the max element */
-    //printf("I am thread: %d with priority %d selecting next thread to run\n", thread_current()->tid, thread_current()->priority); 
-    //struct list_elem *e = list_max (&ready_list, &ready_list_compare, aux);
-    //list_remove (e);
-    //return list_entry (e, struct thread, elem); //gives the thread itself
-    
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
-  }
 }
 
 /* Completes a thread switch by activating the new thread's page

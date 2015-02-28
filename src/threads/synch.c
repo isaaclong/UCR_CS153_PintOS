@@ -31,8 +31,6 @@
 #include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-/*Project 1*/
-//#include "threads/thread.c"
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -194,40 +192,12 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 {
-  /* PROJECT 1:
-   * -check if the lock has a thread in it
-   *     -compare priorities of the two threads
-   *     -if the lock-having thread's priority > current thread's priority,
-   *          -facilitate a donation
-   */
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  // The following block of code causes kernel panic 
-  
-  struct thread *t = thread_current();
-  enum intr_level old_level = intr_disable ();
-//  printf ("lock->holder->priority: %d\n", lock->holder->priority);
-//  printf ("thread_current ()->priority: %d\n", thread_current ()->priority);
-  if (lock->holder && (lock->holder->priority < t->priority))
-  {
-     //struct donor_agreement da;
-     //da.donor = t;
-     //da.beneficiary = lock->holder;
-     lock->holder->priority_recieved += t->priority - lock->holder->priority;
-     //printf("lock->holder->priority_recieved: %d\n", lock->holder->priority_recieved);
-     //list_push_back (&donor_agreement_list, &(da.da_elem));
-     lock->holder->priority = t->priority;
-     lock->holder->donation_lock = lock;
-     //printf("lock->holder->priority: %d\n", lock->holder->priority);
-
-     //add_to_ready_list(t);
-     //printf("added to ready list\n");
-  }
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
-  intr_set_level (old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -261,18 +231,8 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  if(lock == lock->holder->donation_lock)
-  {
-    lock->holder->priority -= lock->holder->priority_recieved;
-
-    //printf("thread %d with priority %d subtracted %d priority\n", lock->holder->tid, lock->holder->priority, lock->holder->priority_recieved);
-
-    lock->holder->priority_recieved = 0;
-    
-
-  }
-    lock->holder = NULL;
-    sema_up (&lock->semaphore);
+  lock->holder = NULL;
+  sema_up (&lock->semaphore);
 }
 
 /* Returns true if the current thread holds LOCK, false

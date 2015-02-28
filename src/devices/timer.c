@@ -7,10 +7,7 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
-// for lists
-#include "lib/kernel/list.h"
-// for abs()
-#include <stdlib.h>
+  
 /* See [8254] for hardware details of the 8254 timer chip. */
 
 #if TIMER_FREQ < 19
@@ -33,18 +30,6 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
-/*
- * PROJECT 1
- *
- * List of processes/threads that are waiting.
- * Using in project 1 to hold sleeping threads. Look in 
- * lib/kernal/list.h for documentation
- */ 
-
-// list of sleeping threads
-static struct list sleeping_thread_list; 
-//extern struct list ready_list;
-
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
@@ -52,9 +37,6 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
-
-  // initializing sleeping_thread_list here because it seems appropriate. 
-  list_init (&sleeping_thread_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -102,84 +84,16 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
-bool
-sleep_list_compare (const struct list_elem *a, const struct list_elem *b, void *aux)
-{
-  struct thread *ta = list_entry (a, struct thread, sleep_elem);
-  struct thread *tb = list_entry (b, struct thread, sleep_elem);
-
-  if (ta->wakeup_tick < tb->wakeup_tick) return true;
-  else if (ta->wakeup_tick > tb->wakeup_tick) return false;
-  // if wakeup times are the same, sleeping_thread_lsit should order by priority
-  else if (ta->wakeup_tick == tb->wakeup_tick) 
-  {
-    //printf("choosing to wakeup next thread based on priority\n");
-    // making this <= for now to cover all cases, may need seperate == case later
-    if (ta->priority <= tb->priority) return false;
-    else if (ta->priority > tb->priority) return true;
-  }
-  //return ta->wakeup_tick < tb->wakeup_tick ? true : false; 
-}
-
-void *aux;
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
 timer_sleep (int64_t ticks) 
 {
-  // Get current thread
-  struct thread *current_thread = thread_current ();
-  
-  // Get currrent ticks
   int64_t start = timer_ticks ();
 
-  // return immediatly if we get a bad tick value as per instructions inside tests
-  if(ticks <= 0) return;
-
-  current_thread->wakeup_tick = start + ticks;
-
-  // make sure interrupts are on up until this point
   ASSERT (intr_get_level () == INTR_ON);
-
-  enum intr_level old_level;
-
-  // disable interrupts while inserting into list
-  old_level = intr_disable ();
-
-  list_insert_ordered (&sleeping_thread_list, &(current_thread->sleep_elem), &sleep_list_compare, aux);
-
-  // reenable interrupts after insertion
-  intr_set_level (old_level);
-
-  //printf("\nAbout to sleep thread with tid: %d\nwith wakeup tick:%"PRId64"\n", current_thread->tid, current_thread->wakeup_tick);
-  // sleep the current thread
-  sema_down (&(current_thread->is_sleeping));
-  // nothing after sema_down is printed until thread wakes up
-  
-  // a time for when the thread should wake up; lib/kernal
-  // FYI: timer ticks 100 times / second
-  // FYI: int64_t is a signed int; could be negative (and I remember there being a test for it)
-
-  // tell thread to sleep (function for this will also stop interrupts)
-  // use thread_block as discussed in lecture - look in sync.c file for how to properly use
-  // ^ if we use this we have to add semaphore into thread; use semma_up and semma_down
-  
-  // (lecture) assign the thread into some waiting queue made with the
-  // existing doubly linked list implementation kernal/list; must turn
-  // interrupts off while putting into list; should return to ready_list after 
-  // appropriate amount of time waited
-  //
-  // have list of sleeping thread; each element in list should store when it has to wake up
-  //
-  // use timer_interrupt {timer_ticks++; thread_tick(); } to wake it up 
-  // look at the list of sleeping threads, compare with current tick, if time to wake up
-  // then semma_up, then remove from sleeping list
-  //
-  // partb) will need to run highest priority thread function here? 
-
-  // Original implementation; busy-waits
-  //while (timer_elapsed (start) < ticks) 
-    //thread_yield ();
+  while (timer_elapsed (start) < ticks) 
+    thread_yield ();
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -253,114 +167,11 @@ timer_print_stats (void)
 }
 
 /* Timer interrupt handler. */
-
-/*
- * PROJECT 1
- *
- * This is what should be used to wake up the threads in the sleep queue.
- * It should iterate through the list of sleeping threads and look at their wake-up
- * tick time and compare that value to the current time (tick). If it's time to wake up, then
- * semma_up() to wake thread and remove it from the list of sleeping threads.
- *
- * Threads will eventually need to be woken up in order of priority?
- */
-
-/* Invoke function 'func' on all threads, passing along 'aux'.
-   This function must be called with interrupts off. */
-
-// used this as template for loop in timer interrupt
-/*  
-void
-thread_foreach (thread_action_func *func, void *aux)
-{
-  struct list_elem *e;
-
-  ASSERT (intr_get_level () == INTR_OFF);
-
-  for (e = list_begin (&all_list); e != list_end (&all_list);
-       e = list_next (e))
-    {
-      struct thread *t = list_entry (e, struct thread, allelem);
-      func (t, aux);
-    }
-}
-*/
-
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  //printf("ticks: %d\n",ticks);
   thread_tick ();
-
-  enum intr_level old_level = intr_disable();
-  
-  struct list_elem *e;
-
-  //ASSERT (intr_get_level () == INTR_OFF);
- /*
-  for (e = list_begin (&ready_list); e != list_end (&ready_list); 
-       e = list_next(e))
-  {
-      struct thread *t = list_entry (e, struct thread, elem);
-      printf ("priority: %d\n", t->priority);
-  }
-*/
-
-  for (e = list_begin (&sleeping_thread_list); e != list_end (&sleeping_thread_list); 
-       e = list_next(e))
-  {
-    struct thread *t = list_entry (e, struct thread, sleep_elem);
-    //printf ("priority (sleeping thread list): %d\nI am thread: %d\n", t->priority, t->tid);
-    if(t->wakeup_tick > 0 && ticks >= t->wakeup_tick)
-    {
-      //printf("\nAbout to wake thread with tid: %d\nat %"PRId64" ticks\n", t->tid, timer_ticks());
-      // sema up to wake up
-      sema_up (&(t->is_sleeping));
-      //printf("\nJust woke thread with tid: %d\nand priority: %d\n", t->tid, t->priority);
-
-      // remove from sleeping_thread_list with interrupts disabled
-      list_remove (e);
-    }
-    // will only need to loop if first wakeup time is ready AND 
-    // identical wakeup times are present at front of sleeping thread list
-    else 
-      break;
-  }
-  //printf ("-------------------------------------------------------\n");
-
-  intr_set_level (old_level);
-
-  // old code for 
-  /*
-  struct list_elem *e = list_begin (&sleeping_thread_list);
-  struct thread *t = list_entry (e, struct thread, sleep_elem);
-  
-  //if (t->wakeup_tick >= ticks) 
-  
-  // may need to change this to a for loop that checks every single member 
-  // of sleeping_thread_list so it can wakeup multiple threads
-  if(t->wakeup_tick > 0 && ticks >= t->wakeup_tick)
-  {
-    //printf("before wakeup check; ticks:%d\n", ticks);
-    
-    printf("\nAbout to wake thread with tid: %d\nat %"PRId64" ticks\n", t->tid, timer_ticks());
-    // sema up to wake up
-    sema_up (&(t->is_sleeping));
-    printf("\nJust woke thread with tid: %d\n", t->tid);
-
-    // remove from sleeping_thread_list with interrupts disabled
-    enum intr_level old_level;
-    old_level = intr_disable ();
-
-    list_remove (e);
-
-  */
-
-
-  //go through the sleeping list and check everything that needs to be woken up
-  //wake if necessary
-  //either yield normally, or, if latter part of B is done, yield higher priority
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

@@ -4,7 +4,6 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-#include "synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -101,32 +100,7 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-
-    /* PROJECT 1 */
-    struct list_elem sleep_elem;
-    int64_t wakeup_tick;
-    struct semaphore is_sleeping;
-    
-    int priority_recieved;
-    struct lock *donation_lock;
-    /* indicated what the thread is with regard to priority donation */
   };
-
-/* PROJECT 1: struct that manages priority transactions between threads */
-struct donor_agreement
-{
-  struct thread *donor;                 /* priority donor thread */
-  struct thread *beneficiary;           /* prioirty beneficiary thread */
-  int donation_amount;                  /* net amount of donation */
-  struct list_elem da_elem;             /* list element */
-};
-
-/* list that holds donor_agreements */
-static struct list donor_agreement_list;
-
-/* List of processes in THREAD_READY state, that is, processes
-   that are ready to run but not actually running. */
-//static struct list ready_list;
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -151,7 +125,6 @@ const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
-void thread_yield2 (void);
 
 /* Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);
@@ -165,5 +138,4 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-void add_to_ready_list (struct thread *t);
 #endif /* threads/thread.h */
