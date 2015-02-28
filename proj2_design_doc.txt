@@ -113,7 +113,7 @@ struct list np_list;                /* list of processes of current thread (chil
 struct pcb *cur_pcb;                /* the process's pcb, used for restoration */
 //struct semaphore np_sema;           /* semaphore used for waiting process */
 struct file *np_fptr                /* current file pointer */
-int fid;                            /* the file descriptor id */
+int fid;                            /* the file descriptor id to use next*/
 
 struct new_process_info
 {
@@ -132,6 +132,10 @@ struct exec_helper
   struct semaphore load_sema;
   bool loaded;
 };
+
+The exec_helper deals with the exec() function. The load_sema will be
+initially downed, then upped when the child is finished loading. loaded will
+be set to the return value of load().
 
 struct file_desc 
 {
@@ -184,7 +188,25 @@ data to the file.
 >> for a system call that only copies 2 bytes of data?  Is there room
 >> for improvement in these numbers, and how much?
 
+If a system call causes a full 4K chunk to be copied, then the greatest number
+of full pages that can be fit inside that 4K space is 2 (meaning 2 calls to
+pagedir_get_page()), and the least number is 1 (meaning 1 call to
+pagedir_get_page()), when the edges of the page are exactly fit into the 4K
+space. 
 
+If we only copy two bytes of data, it is basically the same situation. If the
+maximum and minimum addresses are the same as that which was allocated, then
+you have the identical situation. The only difference is that you are just
+copying two bytes of data - the page is the same size.
+
+There may be room for improvement in these numbers, by up to 2. Instead of
+checking the pages, just let any function operations continue until the
+function attempts to access invalid memory. For valid addresses and
+sufficiently small data read sizes, we would need to call pagedir_get_page() 0
+times, which is very efficient. This would work better for the two byte
+situation than it would for a full page read, which is unlikely to happen
+here. The downside of this system is its instability; it lives life on the
+edge, possibly faulting more than is acceptable.
 
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
@@ -260,7 +282,25 @@ completed loading.
 >> there any special cases?
 
 In the case that P calls wait(C) before C exits, the semaphore that P has
-downed to wait for C's exit.
+downed to wait for C's exit. P waits on the semaphore and C signals it when it
+exits, waking P back up.
+
+In the case where P calls wait(C) after C has already exited, the boolean
+alive in the new_process_info struct will inform the process as to how to act
+with C. P checks the alive flag of C, which is false since C has already
+exited. In this case, P doesn't wait, just returns.
+
+When the child thread exits, it calls thread_exit(), which will free the page
+assigned to that process. We manually free other associated elements from the
+child.
+
+We modify process_exit so that it frees every child in P's child list. That
+way, when P exits first without waiting, all child processes are similarly
+terminated without leaking memory.
+
+In the case where P terminates after C exits, without waiting, C sets the
+pointer in its own new_process_info to null, denying P from accessing bad memory
+used by C.
 
 
 ---- RATIONALE ----
@@ -268,11 +308,26 @@ downed to wait for C's exit.
 >> B9: Why did you choose to implement access to user memory from the
 >> kernel in the way that you did?
 
+We first validate the address and then access the memory. The advantage of
+this system is its inherent simplicity and ease of understanding. We use the
+already-implemented pintOS functions for memory reading and writing, which
+keeps complexity low, as well as preventing possible errors we may introduce
+in our attempt at implementation. 
+
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
 
+Our system is faster in assigning ids to newly opened files, because we have
+the next file descriptor saved in the thread's struct. This avoids going
+through a fid generation function every time. The disadvantage of this system
+is that the fid of a closed file cannot be reused right away. 
+
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
+
+We stuck the the original mapping. A process can only have one thread in
+pintOS, so we did not elect to change it.
+
 
                SURVEY QUESTIONS
                ================
@@ -297,4 +352,3 @@ the quarter.
 >> students, either for future quarters or the remaining projects?
 
 >> Any other comments?
-
