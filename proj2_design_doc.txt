@@ -109,34 +109,73 @@ Added to struct thread in thread.h:
 
 struct list open_file_list;         /* list of files opened by thread */
 int return_status;                  /* indicates failure or success */
-struct list np_list;                /* list of processes of current thread */
-struct semaphore np_sema;           /* semaphore used for waiting process */
+struct list np_list;                /* list of processes of current thread (children) */
+struct pcb *cur_pcb;                /* the process's pcb, used for restoration */
+//struct semaphore np_sema;           /* semaphore used for waiting process */
 struct file *np_fptr                /* current file pointer */
+int fid;                            /* the file descriptor id */
 
-Variables allow the thread to have a list of all files opened. It needs
-two semaphores for synch
-
-struct new_process
+struct new_process_info
 {
   int pid;                          /* id */
-  int pstatus;                      /* status */
+  bool alive;                       /* status */
   struct list_elem np_elem;         /* list element */
-}
+};
 
 Keeps track of the information of the child process. It holds the id
 and status. If a parent tries to wait on an already-dead process,
 pstatus will help to show it's already dead and prevent waiting forever.
 
+struct exec_helper
+{
+  const char* file_name;
+  struct semaphore load_sema;
+  bool loaded;
+};
 
+struct file_desc 
+{
+  char *fname;
+  struct file *fp;
+  struct list_elem elem;
+  int fd;
+};
+
+Essentially the same that we used for parsing. We use the file name to set up
+the stack and load the executable. We use the sema to make sure that parent
+processes wait for children to finish loading the executable file. We use
+loaded to indicate when the child process has loaded the executable.
 
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
->> single process?
+>> single process
+
+File descriptors have a file pointer to the file it references. One thread has
+a list of file descriptors that it has opened. File descriptors are unique
+within the process itself. Within the OS, multiple processes are allowed to
+access the same file, but they will have different file descriptors.
 
 ---- ALGORITHMS ----
 
 >> B3: Describe your code for reading and writing user data from the
 >> kernel.
+
+We write a function that will verify that the pointer that the user program
+gave us is valid. It checks that the pointer is not null, as well as under
+PHYS_BASE. We terminate the process with thread_exit() should the pointer be
+invalid. This function takes care of lots of the page cleanup.
+
+For reading, we get arguments for read() from the stack. If the file
+descriptor's id is 0, then we read from standard in using input_getc().
+If it's not 0, then we get the file pointer for the file descriptor from the
+list of files that the thread has open. Call the provided function file_read()
+from filesys/file.c, which will fill the buffer with the data requested.
+
+For writing, we get the arguments for write() from the stack, as with read. If
+the file descriptor passed in is 1, write to STDOUT. If it is not, get the
+file pointer for the file descriptor from the list of files that the thread
+has open. We then call file_write() from filysys/file.c to write the requested
+data to the file.
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
@@ -145,8 +184,20 @@ pstatus will help to show it's already dead and prevent waiting forever.
 >> for a system call that only copies 2 bytes of data?  Is there room
 >> for improvement in these numbers, and how much?
 
+
+
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
+
+We first ensure that the given pid is a real child process by iterating
+through the thread's list of child processes and checking for its existence.
+If we do not find it, then we can assume that it doesn't exist or it has
+already been removed. At that point we know that it is not a direct child, and
+we can return -1. Then, we check the status of the boolean variable in the
+new_process_info struct alive. If the child process it not alive, that means
+that it has already been exited, and we can return -1 as per the
+specifications. If the child process is still alive, we simply have the parent
+wait on the child until it is finished.
 
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
@@ -162,6 +213,29 @@ pstatus will help to show it's already dead and prevent waiting forever.
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
 
+We avoid obscuring the primary function of code with our pointer
+verification function, mentioned above. The function will verify that the
+pointer the user program provides is valid. It will check that the pointer is
+non-null and under PHYS_BASE. If it fails these checks, we will exit the
+thread with thread_exit(), and set the return status of the thread to -1.
+thread_exit() calls process_exit(), which frees temporarily allocated
+resources.
+
+We force the program to exit when it attempts to access a bad address by
+revising the page_fault handler. We modify page_fault() in
+userprog/exception.c very slightly, so that it ends the thread if the page
+fault was caused by the user and if the fault address is null or above
+PHYS_BASE or unmapped.
+
+For our example, we assume a call to write in which the user passes a null
+pointer as the argument for buffer. During the system call itself, while we
+get the arguments off of the stack, we check each pointer before we
+dereference it, with our pointer verification function. The first argument
+will pass, but when our program tries to verify the validity of NULL, it will
+fail and cause the thread to exit, which triggers a call to thread_exit(), and
+process_exit() in turn, freeing allocated resources in that page.
+
+
 ---- SYNCHRONIZATION ----
 
 >> B7: The "exec" system call returns -1 if loading the new executable
@@ -169,12 +243,25 @@ pstatus will help to show it's already dead and prevent waiting forever.
 >> loading.  How does your code ensure this?  How is the load
 >> success/failure status passed back to the thread that calls "exec"?
 
+We construct a struct that contains useful member variables. It contains the
+name of the program to load, and, more importantly for this question, a
+semaphore which is used to signal the completion of loading for a new program,
+as well as a boolean loaded to indicate when the program is finished loading.
+When the semaphore is initialized, it is initialized to 0 by the parent and
+then downed to wait for the child's loading. load()'s return value goes into
+the loaded variable, and the child ups the load_sema when it has successfully
+completed loading.
+
 >> B8: Consider parent process P with child process C.  How do you
 >> ensure proper synchronization and avoid race conditions when P
 >> calls wait(C) before C exits?  After C exits?  How do you ensure
 >> that all resources are freed in each case?  How about when P
 >> terminates without waiting, before C exits?  After C exits?  Are
 >> there any special cases?
+
+In the case that P calls wait(C) before C exits, the semaphore that P has
+downed to wait for C's exit.
+
 
 ---- RATIONALE ----
 
