@@ -1,0 +1,213 @@
+             +--------------------------+
+             |      CS 153              |
+             | PROJECT 2: USER PROGRAMS |
+             |     DESIGN DOCUMENT      |
+             +--------------------------+
+
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Nathan LaPre <nlapr001@ucr.edu>
+Isaac Long <ilong001@ucr.edu>
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+               ARGUMENT PASSING
+               ================
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+struct exec_helper
+{
+    const char* file_name;
+    struct semaphore load_sema;
+    bool loaded;
+};
+
+The file name is the file name of the child. The semaphore ensures that the
+child will be put into the ready_list before the parent exits. The boolean
+will be true if the child loaded the program correctly.
+
+struct list arg_list;
+
+This list will hold all of our tokenized tokens, in order specified below.
+
+struct arg_elem
+{
+    char *arg;                  /* token in arg list */
+    struct list_elem ae_elem;   /* allows it to be added to arg_list */
+};
+
+The list will be filled with these elements. They will be moved to the stack
+after the list is completed.
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe how you implemented argument parsing.  How do
+>> you arrange for the elements of argv[] to be in the right order?
+>> How do you avoid overflowing the stack page?
+
+When a program starts, we get the argument string, which includes the
+filename. We parse it with strtok_r(). We create an arg_elem for each
+token and push all tokens to a list. Our last element of the list will
+be the last token read in, and the first element will be the filename, which
+we read and use as the filename.
+
+All tokens are in a list, so we can just read the arguments
+from end to beginning and have the proper arrangement of tokens as they are
+pushed onto the stack. (back has the last token --> goes to the bottom of the
+stack)
+
+As to not overflow the stack page, we will restrict the size of the argument to
+something reasonable, such as one or two pages.
+
+---- RATIONALE ----
+
+>> A3: Why does Pintos implement strtok_r() but not strtok()?
+
+While strtok() maintains the internal state with a static pointer, strtok_r()
+instead uses an extra argument. The static pointer of strtok() may lead
+to a race condition, making it non-thread-safe. strtok_t() uses the
+extra argument as a start point for the token search. The caller saves
+the state, so it is usable in a multithreaded OS like Pintos.
+
+>> A4: In Pintos, the kernel separates commands into a executable name
+>> and arguments.  In Unix-like systems, the shell does this
+>> separation.  Identify at least two advantages of the Unix approach.
+
+In Unix, the shell does the heavy lifting of string parsing. However,
+in Pintos, the kernel has to resolve all arguments, which leads to a 
+lot more complexity in the kernel. Commands in Unix come to the kernel
+pre-separated, allowing the kernel to assume there are no incorrect
+commands given to it. Obviously, this is advantageous in reducing
+complexity of the kernel. Essentially, the Unix system method handles
+parsing and errors in the user space, rather than the kernel space,
+allowing the kernel to be more efficient.
+
+                 SYSTEM CALLS
+                 ============
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+Added to struct thread in thread.h:
+
+struct list open_file_list;         /* list of files opened by thread */
+int return_status;                  /* indicates failure or success */
+struct list np_list;                /* list of processes of current thread */
+struct semaphore np_sema;           /* semaphore used for waiting process */
+struct file *np_fptr                /* current file pointer */
+
+Variables allow the thread to have a list of all files opened. It needs
+two semaphores for synch
+
+struct new_process
+{
+  int pid;                          /* id */
+  int pstatus;                      /* status */
+  struct list_elem np_elem;         /* list element */
+}
+
+Keeps track of the information of the child process. It holds the id
+and status. If a parent tries to wait on an already-dead process,
+pstatus will help to show it's already dead and prevent waiting forever.
+
+
+
+>> B2: Describe how file descriptors are associated with open files.
+>> Are file descriptors unique within the entire OS or just within a
+>> single process?
+
+---- ALGORITHMS ----
+
+>> B3: Describe your code for reading and writing user data from the
+>> kernel.
+
+>> B4: Suppose a system call causes a full page (4,096 bytes) of data
+>> to be copied from user space into the kernel.  What is the least
+>> and the greatest possible number of inspections of the page table
+>> (e.g. calls to pagedir_get_page()) that might result?  What about
+>> for a system call that only copies 2 bytes of data?  Is there room
+>> for improvement in these numbers, and how much?
+
+>> B5: Briefly describe your implementation of the "wait" system call
+>> and how it interacts with process termination.
+
+>> B6: Any access to user program memory at a user-specified address
+>> can fail due to a bad pointer value.  Such accesses must cause the
+>> process to be terminated.  System calls are fraught with such
+>> accesses, e.g. a "write" system call requires reading the system
+>> call number from the user stack, then each of the call's three
+>> arguments, then an arbitrary amount of user memory, and any of
+>> these can fail at any point.  This poses a design and
+>> error-handling problem: how do you best avoid obscuring the primary
+>> function of code in a morass of error-handling?  Furthermore, when
+>> an error is detected, how do you ensure that all temporarily
+>> allocated resources (locks, buffers, etc.) are freed?  In a few
+>> paragraphs, describe the strategy or strategies you adopted for
+>> managing these issues.  Give an example.
+
+---- SYNCHRONIZATION ----
+
+>> B7: The "exec" system call returns -1 if loading the new executable
+>> fails, so it cannot return before the new executable has completed
+>> loading.  How does your code ensure this?  How is the load
+>> success/failure status passed back to the thread that calls "exec"?
+
+>> B8: Consider parent process P with child process C.  How do you
+>> ensure proper synchronization and avoid race conditions when P
+>> calls wait(C) before C exits?  After C exits?  How do you ensure
+>> that all resources are freed in each case?  How about when P
+>> terminates without waiting, before C exits?  After C exits?  Are
+>> there any special cases?
+
+---- RATIONALE ----
+
+>> B9: Why did you choose to implement access to user memory from the
+>> kernel in the way that you did?
+
+>> B10: What advantages or disadvantages can you see to your design
+>> for file descriptors?
+
+>> B11: The default tid_t to pid_t mapping is the identity mapping.
+>> If you changed it, what advantages are there to your approach?
+
+               SURVEY QUESTIONS
+               ================
+
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students, either for future quarters or the remaining projects?
+
+>> Any other comments?
+
