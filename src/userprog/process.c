@@ -17,9 +17,16 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "lib/string.h"
 
 static thread_func start_process NO_RETURN;
-static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static bool load (const char *cmd_line, void (**eip) (void), void **esp);
+static bool setup_stack_helper (const char * cmd_line, uint8_t * kpage, uint8_t * upage, void ** esp);
+/* 
+ * Struct used to share between process_execute() in the
+ * invoking thread and start_process() inside the newly 
+ * invoked thread.
+ */
 
 struct exec_helper
 {
@@ -30,9 +37,15 @@ struct exec_helper
         //  hint: need a way to add to the child's list, wee [sic] below about thread's child list
 };
 
+
+
+// kpage is created in setup_stack
+// x is all the values argv, argc, and null (need null on the stack!)
+// be careful of hte order of argv! Check stack example
+
 /* Pushes the SIZE bytes in BUF onto the stack in KPAGE, whose page-
  * relative stack pointer is *OFS, and then adjusts *OFS appropriately.
- * They bytes pushed are rounded to a 32-bit boundary.
+ * The bytes pushed are rounded to a 32-bit boundary.
  *
  * If successful, returns a pointer to the newly pushed object.
  * On failure, returns a null pointer. */
@@ -237,7 +250,10 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+/* PROJECT 2 */
+#define MAX_ARGS 3
+
+static bool setup_stack (void **esp, char *cmd_line);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -248,7 +264,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (const char *file_name, void (**eip) (void), void **esp)  //change file name to cmd_line
+load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name to cmd_line
 {
   struct thread *t = thread_current ();
   //char file_name[NAME_MAX+2]; //add a file name variable here, the file_name and cmd_line are different
@@ -264,22 +280,34 @@ load (const char *file_name, void (**eip) (void), void **esp)  //change file nam
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
-
-  //use strtok_r to remove file_name from cmd_line
   
+  /* PROJECT 2 */
+  //use strtok_r to remove file_name from cmd_line
+  char *token, *save_ptr;
+  char *parsed_args[MAX_ARGS];
+  i = 0;
 
+  // first call to strtok_r returns first argument
+  // subsequent calls return subsequent arguments until NULL which 
+  // means done
+  for (token = strtok_r (file_name, " ", &save_ptr); token != NULL && i < MAX_ARGS;
+       token = strtok_r (NULL, " ", &save_ptr))
+  {
+    parsed_args[i] = token;
+    i++;
+  }
 
-
-
-
-
-
+  char *prog_name = parsed_args[0];
+  
 
 
   //end of implied blank space
 
   /* Open executable file. */
-  file = filesys_open (file_name);  // set the thread's bin file to this as well! it is super helpful to have each thread have a pointer to the file they are using for when you need to close it in process_exit
+  //file = filesys_open (file_name);  // set the thread's bin file to this as well! it is super helpful to have
+                                    // each thread have a pointer to the file they are using for when you need to close it in process_exit
+  file = filesys_open (prog_name);
+
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -360,7 +388,8 @@ load (const char *file_name, void (**eip) (void), void **esp)  //change file nam
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))  // add cmd_line to setup_stack param here, also change setup_stack
+  //if (!setup_stack (esp))  // add cmd_line to setup_stack param here, also change setup_stack
+  if (!setup_stack (esp, cmd_line))  // add cmd_line to setup_stack param here, also change setup_stack
     goto done;
 
   /* Start address. */
@@ -370,7 +399,11 @@ load (const char *file_name, void (**eip) (void), void **esp)  //change file nam
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);        //remove this!!!!!!!! (yes eight) since thread has its own file, clsoe it when process is done (hint: in process exit)
+
+  // TODO: push all arguments on to stack 
+
+  file_close (file);        //remove this!!!!!!!! (yes eight) since
+                            //thread has its own file, close it when process is done (hint: in process exit)
   return success;
 }
 
@@ -482,10 +515,70 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
+/* PROJECT 2 */
+
+static bool setup_stack_helper (const char * cmd_line, uint8_t * kpage, uint8_t * upage, void ** esp) 
+{
+  size_t ofs = PGSIZE; //##Used in push!
+  char * const null = NULL; //##Used for pushing nulls
+  char *ptr; //##strtok_r usage
+  //##Probably need some other variables here as well...
+
+  
+
+  
+
+  //##Parse and put in command line arguments, push each value
+  //##if any push() returns NULL, return false
+  
+  /* PROJECT 2 */
+  //use strtok_r to remove file_name from cmd_line
+  char *token, *save_ptr;
+  char *parsed_args[MAX_ARGS];
+  int i = 0;
+
+  // first call to strtok_r returns first argument
+  // subsequent calls return subsequent arguments until NULL which 
+  // means done
+  for (token = strtok_r (cmd_line, " ", &save_ptr); token != NULL && i < MAX_ARGS;
+       token = strtok_r (NULL, " ", &save_ptr))
+  {
+    parsed_args[i] = token;
+    i++;
+  }
+
+  //##push() a null (more precisely &null).
+  //##if push returned NULL, return false
+  if(push (kpage, &ofs, &null, sizeof(null)) == NULL)
+    return false; 
+
+  *esp=*esp-4+(sizeof(null) + 1)%4; // do this for every push?
+  //##Push argv addresses (i.e. for the cmd_line added above) in reverse order
+  //size_t bufsize = sizeof (parsed_args[0]);
+  //push (kpage, &ofs, &parsed_args[0], bufsize); 
+
+  //##Push argc, how can we determine argc?
+  push (kpage, &ofs, &i, bufsize); // esp??
+  *esp=*esp-4+(sizeof() + 1)%4;
+
+  //##See the stack example on documentation for what "reversed" means
+  //##Push &null
+  push (kpage, &ofs, &null, sizeof(null));
+  //##Should you check for NULL returns?
+
+  //##Set the stack pointer. IMPORTANT! Make sure you use the right value here...
+  *esp = upage + ofs;
+
+  //##If you made it this far, everything seems good, return true
+  return true;
+}
+
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
+
+// added parameter for parsed command line args
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, char *cmd_line) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -494,8 +587,18 @@ setup_stack (void **esp)
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+
+      // TODO: push all arguments onto stack in reverse order, i.e. push "y\0", push "x\0" push "echo\0"
+      // remember the addresses on stack where these strings are pushed as later we need to push those 
+      // addresses too
       if (success)
+      {
         *esp = PHYS_BASE;
+        setup_stack_helper (&cmd_line, kpage, ((uint8_t *) PHYS_BASE) - PGSIZE, esp);
+      }
+
+        
+
       else
         palloc_free_page (kpage);
     }
