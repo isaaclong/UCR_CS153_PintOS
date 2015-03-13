@@ -19,10 +19,13 @@
 #include "threads/vaddr.h"
 #include "lib/string.h"
 #include "threads/synch.h"
+/* PROJECT 2: include malloc as well (for our process_info structs) */
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmd_line, void (**eip) (void), void **esp);
 static bool setup_stack_helper (const char * cmd_line, uint8_t * kpage, uint8_t * upage, void ** esp);
+void free_info (struct process_info *pi);
 /* 
  * Struct used to share between process_execute() in the
  * invoking thread and start_process() inside the newly 
@@ -35,7 +38,7 @@ struct exec_helper
     //add semaphore for loading (for resource race cases)
     struct semaphore load_done;
     //add bool for determining if program loaded successfully
-    struct wait_status *wait_status;
+    struct process_info *process_info;
     //add other stuff to transfer between process_execute and process_start
     bool success;
     //  hint: need a way to add to the child's list, wee [sic] below about thread's child list
@@ -45,7 +48,7 @@ struct exec_helper
 
 // kpage is created in setup_stack
 // x is all the values argv, argc, and null (need null on the stack!)
-// be careful of hte order of argv! Check stack example
+// be careful of the order of argv! Check stack example
 
 /* Pushes the SIZE bytes in BUF onto the stack in KPAGE, whose page-
  * relative stack pointer is *OFS, and then adjusts *OFS appropriately.
@@ -64,6 +67,17 @@ push (uint8_t *kpage, size_t *ofs, const void *buf, size_t size)
     return kpage + *ofs + (padsize - size);
 }
 
+/* reverse the order of argc pointers, esentially reversing the order of argv */
+void reverse_args (int argc, char **argv)
+{
+  int i;
+  for (i = argc - 1; i > (argc - 1) / 2; --i) {
+    char *tmp = argv[i];
+    argv[i]   = argv[(argc - 1) - i];
+    argv[(argc - 1) - i] = tmp;
+  }
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -71,13 +85,16 @@ push (uint8_t *kpage, size_t *ofs, const void *buf, size_t size)
 tid_t
 process_execute (const char *file_name) 
 {
-  //struct exec_helper exec;
-  //char thread_name[16];
+  struct exec_helper exec;
+  char thread_name[16];
   char *fn_copy; //suggested deletion on this line
   tid_t tid;
+  char* saveptr;
 
   //set exec file name here
+  exec.file_name = file_name;
   //initialize a semaphore for loading here
+  sema_init (&exec.load_done, 0);
 
 
   /* SUGGESTED: REMOVE THE BELOW FROM HERE ----------------*/
@@ -90,26 +107,42 @@ process_execute (const char *file_name)
 
   /* UNTIL HERE ------------------- */
 
-  //add program name to thread_name, watch out for the size, strtok_r....
+  //##add program name to thread_name, watch out for the size, strtok_r....
+  /* copy file name into thread_name to init the thread (make it 16 as specified in thread.h) */
+  strlcpy (thread_name, file_name, sizeof (thread_name));
+  /* tokenize the first arg */
+  strtok_r (thread_name, " ", &saveptr);
+  tid = thread_create (thread_name, PRI_DEFAULT, start_process, &exec);
 
-  /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy); //remove fn_copy, add exec to the end of these params, a void is allowed. look in thread_create kf->aux is set to thread_create aux which would be exec. So make good use of exec helper!
-  if (tid == TID_ERROR) // change to !=
+  if (tid != TID_ERROR) // change to !=
   {
-    //down a semaphore for loading (where should you up it?)
+    //down a semaphore for loading (where should you up it?) --> in start_process!
+    /* this is upped in start_process after the process has been, well, started. */
+    sema_down (&exec.load_done); 
     //if program loaded successfully, add new child to the list of this thread's children (mind list_elems)...we need to check this list in process wait, when children are done, process wait can finish, see process wait
-    //else TID_ERROR
-    palloc_free_page (fn_copy); //suggested: remove this line
+    /* if it successfully loaded, push the info struct onto the children list */
+    if (exec.success)
+    {
+      list_push_back (&(thread_current ()->children), &(exec.process_info->elem));
+    }
+    else
+    {
+      tid = TID_ERROR;
+    }
+    //palloc_free_page (fn_copy); //suggested: remove this line
   }
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
+/* PROJECT 2: changed how this function works so that it uses the exec_helper structs 
+ *  (it's just one more layer of indirection, what could go wrong?) */
 static void
-start_process (void *file_name_)
+start_process (void *exec_)
 {
-  char *file_name = file_name_;
+  struct exec_helper *exec = exec_;  //added
+  //char *file_name = file_name_; //no longer necessary
   struct intr_frame if_;
   bool success;
 
@@ -118,10 +151,35 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (exec->file_name, &if_.eip, &if_.esp);  //file_name become exec->file_name
+
+  /* PROJECT 2 */
+  /* since we create the process with thread_create in process_execute, we have to 
+   * deal with allocating memory for process_info here */
+  if (success)
+  {
+    /* the following line allocates memory for the process_info struct of the executing thread */
+    exec->process_info = thread_current ()->process_info = malloc (sizeof (*exec->process_info));
+    /* since we initialize process_info to NULL, if it's still NULL then it's not a success */
+    success = NULL != exec->process_info;
+  }
+  
+  /* we also have to initialize process_into since it's the first time it is in use */
+  if (success)
+  {
+    lock_init (&exec->process_info->lock);
+    exec->process_info->alive_count = 2;         /* 2 -> both parent and child are alive at this point */
+    exec->process_info->exit_status = -1;        /* -1 indicates it's alive for now */
+    sema_init (&exec->process_info->alive, 0);
+  }
+
+  /* alert that parent thread that the loading has happened. */
+  exec->success = success;
+  /* up the semaphore that we downed in process_execute */
+  sema_up (&exec->load_done);       /* the helper really helps here */
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  //palloc_free_page (exec->file_name);  //turns out we don't need this line because we allocated already
   if (!success) 
     thread_exit ();
 
@@ -135,6 +193,21 @@ start_process (void *file_name_)
   NOT_REACHED ();
 }
 
+/* PROJECT 2: since we used malloc for our process_info, we have to free it as well */
+void free_info (struct process_info *pi)
+{
+  /* before we can free it, we have to check if the processes are alive or not */
+  int temp_alive_count;
+  /* ensure mutex on the count */
+  lock_acquire (&pi->lock);
+  /* we have to use this temp variable to work with the locks */
+  temp_alive_count = --pi->alive_count;
+  lock_release (&pi->lock);
+  sema_up (&pi->alive);          /* it was initialized to 0, so we up it here */
+
+  if (temp_alive_count == 0) free (pi);
+}
+
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
@@ -145,8 +218,25 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
+  /* PROJECT 2: added psuedo code */
+  //struct process_info* pi = get_child_process (child_tid);
+  //the above line will mean we have to write a function to do that...probably in thread.c?
+  //probably just a for loop through the all list?
+  //while (1);
+  struct thread *cur = thread_current ();
+  struct list_elem *kids;       /* holds a process's list of children as we iterate */
+  for (kids = list_begin (&(cur->children)); kids != list_end (&(cur->children)); kids = list_next (kids))
+  {
+    struct process_info *kid = list_entry (kids, struct process_info, elem);
+    if (child_tid == kid->tid)
+    {
+      sema_down (&kid->alive);
+      list_remove (kids);
+      return kid->exit_status;
+    }
+  }
   return -1;
 }
 
@@ -156,6 +246,28 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+  /* PROJECT 2: get some list elems going */
+  struct list_elem *e, *next;
+
+  /* close the exec so that we can write */
+  file_close (cur->executable);
+
+  if (cur->process_info != NULL)
+  {
+    /* grab the struct temporarily so we can free it */
+    struct process_info *pi = cur->process_info;
+    /* release the process_info struct */
+    free_info (pi);
+  }
+
+  /* destroy all the child_list entries */
+  for (e = list_begin (&cur->children); e != list_end (&cur->children); e = next)
+  {
+    /* get the process info of each child, advance next with list_remove, and free the entry */
+    struct process_info *pi = list_entry (e, struct process_info, elem);
+    next = list_remove (e);
+    free_info (pi);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -271,7 +383,7 @@ bool
 load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name to cmd_line
 {
   struct thread *t = thread_current ();
-  //char file_name[NAME_MAX+2]; //add a file name variable here, the file_name and cmd_line are different
+  char file_name[NAME_MAX+2]; //add a file name variable here, the file_name and cmd_line are different
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
   off_t file_ofs;
@@ -308,16 +420,16 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
   //end of implied blank space
 
   /* Open executable file. */
-  //file = filesys_open (file_name);  // set the thread's bin file to this as well! it is super helpful to have
-                                    // each thread have a pointer to the file they are using for when you need to close it in process_exit
-  file = filesys_open (prog_name);
+  file = filesys_open (prog_name); // set the thread's bin file to this as well! it is super helpful to have
+  t->executable = file;
+  // each thread have a pointer to the file they are using for when you need to close it in process_exit
 
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", prog_name);
       goto done; 
     }
-        //disable file write for 'file' here. GO TO BOTTOM. DON'T CHANGE ANYTHING IN THESE IF AND FOR STATEMENTS
+  //disable file write for 'file' here. GO TO BOTTOM. DON'T CHANGE ANYTHING IN THESE IF AND FOR STATEMENTS
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -406,7 +518,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
 
   // TODO: push all arguments on to stack 
 
-  file_close (file);        //remove this!!!!!!!! (yes eight) since
+//  file_close (file);        //remove this!!!!!!!! (yes eight) since
                             //thread has its own file, close it when process is done (hint: in process exit)
   return success;
 }
@@ -525,17 +637,21 @@ static bool setup_stack_helper (const char * cmd_line, uint8_t * kpage, uint8_t 
 {
   size_t ofs = PGSIZE; //##Used in push!
   char * const null = NULL; //##Used for pushing nulls
-  char *ptr; //##strtok_r usage
+  //char *saveptr; //##strtok_r usage
   //##Probably need some other variables here as well...
-
+  char *temp_cmd_line;
+  int argc;  
+  char **argv;
   
-
-  
-
   //##Parse and put in command line arguments, push each value
+  temp_cmd_line = push (kpage, &ofs, cmd_line, strlen (cmd_line) + 1);
   //##if any push() returns NULL, return false
+  if (temp_cmd_line == NULL) return false;
   
-  /* PROJECT 2 */
+  //##push() a null (more precisely &null).
+  //##if push returned NULL, return false
+  if (push (kpage, &ofs, &null, sizeof (null)) == NULL) return false;
+
   //use strtok_r to remove file_name from cmd_line
   char *token, *save_ptr;
   char *parsed_args[MAX_ARGS];
@@ -544,17 +660,29 @@ static bool setup_stack_helper (const char * cmd_line, uint8_t * kpage, uint8_t 
   // first call to strtok_r returns first argument
   // subsequent calls return subsequent arguments until NULL which 
   // means done
-  for (token = strtok_r (cmd_line, " ", &save_ptr); token != NULL && i < MAX_ARGS;
+  for (token = strtok_r (temp_cmd_line, " ", &save_ptr); token != NULL && i < MAX_ARGS;
        token = strtok_r (NULL, " ", &save_ptr))
   {
+    void *cur_uarg = upage + (token - (char *) kpage);
+    if (push (kpage, &ofs, &cur_uarg, sizeof (cur_uarg)) == NULL) return false;
     parsed_args[i] = token;
     i++;
   }
 
-  //##push() a null (more precisely &null).
-  //##if push returned NULL, return false
-  if(push (kpage, &ofs, &null, sizeof(null)) == NULL)
-    return false; 
+  /* after iterating through the list, argc should be i */
+  argc = i;
+  argv = (char **) (upage + ofs);
+  reverse_args (argc, (char **) (kpage + ofs));
+
+  /* push argv, argc, null to indicate end */
+  if (push (kpage, &ofs, &argv, sizeof (argv)) == NULL
+   || push (kpage, &ofs, &argc, sizeof (argc)) == NULL
+   || push (kpage, &ofs, &null, sizeof (null)) == NULL)
+  {
+    return false;
+  }
+
+/*
 
   *esp=*esp-4+(sizeof(null) + 1)%4; // do this for every push?
   //##Push argv addresses (i.e. for the cmd_line added above) in reverse order
@@ -569,6 +697,8 @@ static bool setup_stack_helper (const char * cmd_line, uint8_t * kpage, uint8_t 
   //##Push &null
   push (kpage, &ofs, &null, sizeof(null));
   //##Should you check for NULL returns?
+ 
+*/
 
   //##Set the stack pointer. IMPORTANT! Make sure you use the right value here...
   *esp = upage + ofs;
@@ -590,16 +720,22 @@ setup_stack (void **esp, char *cmd_line)
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-
+      //success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+      uint8_t *upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
+      if (install_page (upage, kpage, true))
+      {
+        success = setup_stack_helper (kpage, upage, cmd_line, esp);
+      }
       // TODO: push all arguments onto stack in reverse order, i.e. push "y\0", push "x\0" push "echo\0"
       // remember the addresses on stack where these strings are pushed as later we need to push those 
       // addresses too
+      /*
       if (success)
       {
         *esp = PHYS_BASE;
         setup_stack_helper (&cmd_line, kpage, ((uint8_t *) PHYS_BASE) - PGSIZE, esp);
       }
+      */
 
         
 

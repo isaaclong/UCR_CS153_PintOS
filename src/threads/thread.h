@@ -1,6 +1,9 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
 
+/* PROJECT 2 */
+#include "threads/synch.h"
+
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
@@ -93,14 +96,39 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+    /* PROJECT 2 */
+    /* owned by process.c */
+    struct process_info *process_info;  /* holds information about child process stuff */
+    struct list children;               /* completion status of children */
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
 
+    struct file *executable;            /* bin file to execute */
+
+    /* for syscall.c */
+    struct list fds;                    /* list of held file descriptors */
+    int next_fd;                        /* next fd value to give out */
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
+/* PROJECT 2 */
+/* tracks process completion - reference held by both parent and children */
+struct process_info
+{
+  int alive_count;                      /* 0 -> both child/parent dead
+                                           1 -> either alive
+                                           2 -> both alive */
+  struct list_elem elem;                /* children list elem */
+  struct lock lock;
+  tid_t tid;
+  int exit_status;
+  struct semaphore alive;               /* 1 if alive, 0 otherwise */
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

@@ -468,6 +468,15 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  /* PROJECT 2 */
+  /* initialize the list of children */
+  list_init (&t->children);
+  /* currently no wait info available */
+  t->process_info = NULL;
+  /* initialize the file descriptor list */
+  list_init (&t->fds);
+  /* set the next file descriptor to assign */
+  t->next_fd = 2;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
 }
