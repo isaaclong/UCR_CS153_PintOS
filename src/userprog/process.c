@@ -90,6 +90,8 @@ process_execute (const char *file_name)
   char *fn_copy; //suggested deletion on this line
   tid_t tid;
   char* saveptr;
+  
+  printf ("@@@@@@@@@@@@@@@@@@@@@@@@@process_execute\n");
 
   //set exec file name here
   exec.file_name = file_name;
@@ -100,10 +102,10 @@ process_execute (const char *file_name)
   /* SUGGESTED: REMOVE THE BELOW FROM HERE ----------------*/
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
-    return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+//  fn_copy = palloc_get_page (0);
+//  if (fn_copy == NULL)
+//    return TID_ERROR;
+//  strlcpy (fn_copy, file_name, PGSIZE);
 
   /* UNTIL HERE ------------------- */
 
@@ -146,6 +148,8 @@ start_process (void *exec_)
   struct intr_frame if_;
   bool success;
 
+  printf ("@@@@@@@@@@@@@@@@@@@@@@@@@start_process\n");
+
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -162,6 +166,7 @@ start_process (void *exec_)
     exec->process_info = thread_current ()->process_info = malloc (sizeof (*exec->process_info));
     /* since we initialize process_info to NULL, if it's still NULL then it's not a success */
     success = NULL != exec->process_info;
+    printf ("@@@@@@@@@@@@@@@@@@@@@@@@@start_process[success]\n");
   }
   
   /* we also have to initialize process_into since it's the first time it is in use */
@@ -415,6 +420,8 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
 
   char *prog_name = parsed_args[0];
   
+
+  printf ("@@@@@@@@@@@@@@@@@@@@@@@@@load (should happen before success of start_process)\n");
 
 
   //end of implied blank space
