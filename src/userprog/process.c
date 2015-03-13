@@ -18,6 +18,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "lib/string.h"
+#include "threads/synch.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmd_line, void (**eip) (void), void **esp);
@@ -31,10 +32,13 @@ static bool setup_stack_helper (const char * cmd_line, uint8_t * kpage, uint8_t 
 struct exec_helper
 {
     const char *file_name;    /* program to load */
-        //add semaphore for loading (for resource race cases)
-        //add bool for determining if program loaded successfully
-        //add other stuff to transfer between process_execute and process_start
-        //  hint: need a way to add to the child's list, wee [sic] below about thread's child list
+    //add semaphore for loading (for resource race cases)
+    struct semaphore load_done;
+    //add bool for determining if program loaded successfully
+    struct wait_status *wait_status;
+    //add other stuff to transfer between process_execute and process_start
+    bool success;
+    //  hint: need a way to add to the child's list, wee [sic] below about thread's child list
 };
 
 
@@ -290,7 +294,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
   // first call to strtok_r returns first argument
   // subsequent calls return subsequent arguments until NULL which 
   // means done
-  for (token = strtok_r (file_name, " ", &save_ptr); token != NULL && i < MAX_ARGS;
+  for (token = strtok_r (cmd_line, " ", &save_ptr); token != NULL && i < MAX_ARGS;
        token = strtok_r (NULL, " ", &save_ptr))
   {
     parsed_args[i] = token;
@@ -310,7 +314,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
 
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", file_name);
+      printf ("load: %s: open failed\n", prog_name);
       goto done; 
     }
         //disable file write for 'file' here. GO TO BOTTOM. DON'T CHANGE ANYTHING IN THESE IF AND FOR STATEMENTS
@@ -324,7 +328,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024) 
     {
-      printf ("load: %s: error loading executable\n", file_name);
+      printf ("load: %s: error loading executable\n", prog_name);
       goto done; 
     }
 
@@ -558,8 +562,8 @@ static bool setup_stack_helper (const char * cmd_line, uint8_t * kpage, uint8_t 
   //push (kpage, &ofs, &parsed_args[0], bufsize); 
 
   //##Push argc, how can we determine argc?
-  push (kpage, &ofs, &i, bufsize); // esp??
-  *esp=*esp-4+(sizeof() + 1)%4;
+  push (kpage, &ofs, &i, sizeof (i));
+  *esp=*esp-4+(sizeof(i) + 1)%4;
 
   //##See the stack example on documentation for what "reversed" means
   //##Push &null
