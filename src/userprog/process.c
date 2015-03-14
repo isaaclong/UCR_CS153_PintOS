@@ -45,7 +45,6 @@ struct exec_helper
 };
 
 
-
 // kpage is created in setup_stack
 // x is all the values argv, argc, and null (need null on the stack!)
 // be careful of the order of argv! Check stack example
@@ -392,7 +391,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
   struct file *file = NULL;
   off_t file_ofs;
   bool success = false;
-//  char* charPointer;  //added for parsing
+  char* charPointer;  //added for parsing
   int i;
 
   /* Allocate and activate page directory. */
@@ -409,10 +408,8 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
 
   /* copy all of cmd_line into file_name */
   strlcpy (file_name, cmd_line, sizeof (file_name));
-  /* get the pointer to the first space character in the string */
-  char *charPointer = strchr (file_name, ' ');
-  /* set the pointer that we found */
-  if (charPointer != NULL) *charPointer = '\0';
+  /* get just the first arg (the filename without args) */
+  strtok_r (file_name, " ", &charPointer);
 
   file = filesys_open (file_name);
   t->executable = file;
@@ -437,8 +434,6 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
   //end of implied blank space
 
 //  file = filesys_open (prog_name); // set the thread's bin file to this as well! it is super helpful to have
-
-//  printf ("@@@@@@@@@@@@@@@@@@@@@@@@@load (after filesys_open)\n");
 
 //  t->executable = file;
   // each thread have a pointer to the file they are using for when you need to close it in process_exit

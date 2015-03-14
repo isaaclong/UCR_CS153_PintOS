@@ -244,18 +244,32 @@ static int sys_open (const char *file)
 //filesize
 static int sys_filesize (int fd)
 {
+  /* use file_length defined in file.c */
+  int filesize = 0;
+  struct file_desc *fd_struct = get_fd_struct (fd);
+  lock_acquire (&filesys_lock);
+  /* the following line goes file_length -> inode_length -> inode -> inode_disk (data) -> length member */
+  filesize = file_length (fd_struct->f);
+  lock_release (&filesys_lock);
+
+  return filesize;
 }
 //read
 static int sys_read (int fd, void *buffer, unsigned size)
 {
 }
 //seek
+/* check out file_seek, probably does what we want here */
 static void sys_seek (int fd, unsigned position)
 {
 }
 //tell
+/* notes: file_tell in file.c seems to do exactly what we need here (maybe file_tell(...) + 1? */
+/* I'm not convinced that this is even tested */
 static unsigned sys_tell (int fd)
 {
+  struct file_desc *fd_struct = get_fd_struct (fd);
+  return file_tell (fd_struct->f);
 }
 //close
 static void sys_close (int fd)
