@@ -90,8 +90,6 @@ process_execute (const char *file_name)
   char *fn_copy; //suggested deletion on this line
   tid_t tid;
   char* saveptr;
-  
-  printf ("@@@@@@@@@@@@@@@@@@@@@@@@@process_execute\n");
 
   //set exec file name here
   exec.file_name = file_name;
@@ -121,6 +119,7 @@ process_execute (const char *file_name)
     //down a semaphore for loading (where should you up it?) --> in start_process!
     /* this is upped in start_process after the process has been, well, started. */
     sema_down (&exec.load_done); 
+
     //if program loaded successfully, add new child to the list of this thread's children (mind list_elems)...we need to check this list in process wait, when children are done, process wait can finish, see process wait
     /* if it successfully loaded, push the info struct onto the children list */
     if (exec.success)
@@ -148,8 +147,6 @@ start_process (void *exec_)
   struct intr_frame if_;
   bool success;
 
-  printf ("@@@@@@@@@@@@@@@@@@@@@@@@@start_process\n");
-
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -166,13 +163,13 @@ start_process (void *exec_)
     exec->process_info = thread_current ()->process_info = malloc (sizeof (*exec->process_info));
     /* since we initialize process_info to NULL, if it's still NULL then it's not a success */
     success = NULL != exec->process_info;
-    printf ("@@@@@@@@@@@@@@@@@@@@@@@@@start_process[success]\n");
   }
   
   /* we also have to initialize process_into since it's the first time it is in use */
   if (success)
   {
     lock_init (&exec->process_info->lock);
+    exec->process_info->tid = thread_current ()->tid;
     exec->process_info->alive_count = 2;         /* 2 -> both parent and child are alive at this point */
     exec->process_info->exit_status = -1;        /* -1 indicates it's alive for now */
     sema_init (&exec->process_info->alive, 0);
@@ -186,7 +183,9 @@ start_process (void *exec_)
   /* If load failed, quit. */
   //palloc_free_page (exec->file_name);  //turns out we don't need this line because we allocated already
   if (!success) 
+  {
     thread_exit ();
+  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -261,6 +260,7 @@ process_exit (void)
   {
     /* grab the struct temporarily so we can free it */
     struct process_info *pi = cur->process_info;
+    printf ("%s: exit(%d)\n", cur->name, pi->exit_status);
     /* release the process_info struct */
     free_info (pi);
   }
@@ -393,7 +393,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
   struct file *file = NULL;
   off_t file_ofs;
   bool success = false;
-  //char* charPointer;  //added for parsing
+  char* charPointer;  //added for parsing
   int i;
 
   /* Allocate and activate page directory. */
@@ -408,9 +408,22 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
   char *parsed_args[MAX_ARGS];
   i = 0;
 
+  
+  while (*cmd_line == ' ') cmd_line++;
+  strlcpy (file_name, cmd_line, sizeof (file_name));
+  charPointer = strchr (file_name, ' ');
+  if (charPointer != NULL) *charPointer = '\0';
+
+  file = filesys_open (file_name);
+  t->executable = file;
+  
+
   // first call to strtok_r returns first argument
   // subsequent calls return subsequent arguments until NULL which 
   // means done
+  /* note: this method below has been commented because it caused undefined behavior */
+
+/*
   for (token = strtok_r (cmd_line, " ", &save_ptr); token != NULL && i < MAX_ARGS;
        token = strtok_r (NULL, " ", &save_ptr))
   {
@@ -419,24 +432,25 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
   }
 
   char *prog_name = parsed_args[0];
-  
-
-  printf ("@@@@@@@@@@@@@@@@@@@@@@@@@load (should happen before success of start_process)\n");
-
+  printf ("prog_name: %s\n", prog_name);
+*/  
 
   //end of implied blank space
 
-  /* Open executable file. */
-  file = filesys_open (prog_name); // set the thread's bin file to this as well! it is super helpful to have
-  t->executable = file;
+//  file = filesys_open (prog_name); // set the thread's bin file to this as well! it is super helpful to have
+
+//  printf ("@@@@@@@@@@@@@@@@@@@@@@@@@load (after filesys_open)\n");
+
+//  t->executable = file;
   // each thread have a pointer to the file they are using for when you need to close it in process_exit
 
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", prog_name);
+      printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
   //disable file write for 'file' here. GO TO BOTTOM. DON'T CHANGE ANYTHING IN THESE IF AND FOR STATEMENTS
+  file_deny_write (file);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -447,7 +461,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024) 
     {
-      printf ("load: %s: error loading executable\n", prog_name);
+      printf ("load: %s: error loading executable\n", file_name);
       goto done; 
     }
 
@@ -672,7 +686,7 @@ static bool setup_stack_helper (const char * cmd_line, uint8_t * kpage, uint8_t 
   {
     void *cur_uarg = upage + (token - (char *) kpage);
     if (push (kpage, &ofs, &cur_uarg, sizeof (cur_uarg)) == NULL) return false;
-    parsed_args[i] = token;
+    //parsed_args[i] = token;
     i++;
   }
 
@@ -731,7 +745,11 @@ setup_stack (void **esp, char *cmd_line)
       uint8_t *upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
       if (install_page (upage, kpage, true))
       {
-        success = setup_stack_helper (kpage, upage, cmd_line, esp);
+        success = setup_stack_helper (cmd_line, kpage, upage, esp);
+      }
+      else
+      {
+        palloc_free_page (kpage);
       }
       // TODO: push all arguments onto stack in reverse order, i.e. push "y\0", push "x\0" push "echo\0"
       // remember the addresses on stack where these strings are pushed as later we need to push those 
@@ -743,11 +761,6 @@ setup_stack (void **esp, char *cmd_line)
         setup_stack_helper (&cmd_line, kpage, ((uint8_t *) PHYS_BASE) - PGSIZE, esp);
       }
       */
-
-        
-
-      else
-        palloc_free_page (kpage);
     }
   return success;
 }
