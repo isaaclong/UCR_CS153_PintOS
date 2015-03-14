@@ -60,6 +60,7 @@ struct file_desc
   int fd;                           /* the actual number of the file descriptor */
 };
 
+static struct file_desc* get_fd_struct (int fd);
 typedef int sc_func (int, int, int);
 struct syscall
 {
@@ -95,35 +96,29 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f) 
 {
-  printf ("system call!\n");
+  /* before we do anything, we should check that the stack pointer is in user space 
+   * using the function provided by the TA. I think is_kernel_vaddr (f->esp) would
+   * work equivalently. Maybe it's less safe. */
+  if (!verify_user (f->esp)) sys_exit(-1);
 
   unsigned callNum;
   int args[3];
   int numOfArgs;
-  struct syscall *sc;
+  struct syscall *sc_struct;
 
   /* get the actual system call that we need */
   /* get syscall number */
   copy_in (&callNum, f->esp, sizeof callNum);
-  if (callNum >= sizeof (all_syscalls) / sizeof (*all_syscalls))
-  {
-    thread_exit ();
-  }
-  sc = all_syscalls + callNum;
+
+  /* this line accesses the correct struct in our table by adding: it's like a case statement
+   * but without the overhead of a case statement - pretty cool right? */
+  sc_struct = all_syscalls + callNum;
 
   /* get the arguments to the syscall */
-  memset (args, 0, sizeof (args));
-  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * numOfArgs);
-
-  /* check that the pointer to the stack is valid */
-  if (!verify_user (f->esp)) sys_exit (-1);
-  
-  //numOfArgs = number of args that the system call uses
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * sc_struct->num_args);
   
   /* execute the syscall, set the eax in the interrupt frame */
-  f->eax = sc->scf (args[0], args[1], args[2]);
-
-  thread_exit ();
+  f->eax = sc_struct->scf (args[0], args[1], args[2]);
 }
 
 /* Copies SIZE bytes from user address USRC to kernel address
@@ -186,9 +181,6 @@ get_user (uint8_t *dst, const uint8_t *usrc)
   return eax != 0;
 }
 
-
-
-
 /* Returns true if UADDR is a valid, mapped user address,
    false otherwise. */
 static bool
@@ -200,87 +192,30 @@ verify_user (const void *uaddr)
 
 static void sys_exit (int status)
 {
+  /* here is where we set the exit_status of a process, since every one will call exit */
   thread_current ()->process_info->exit_status = status;
-  thread_exit ();
-  NOT_REACHED ();
-}
-
-static struct file_desc* find_fd (int fd)
-{
-  printf ("we're in find_fd after a call from sys_write\n");
-  struct thread *cur = thread_current ();
-  struct list_elem *e;
-  struct file_desc* temp_fd_struct;
-  int i = 0;
-  /* iterate through the file descriptor (of current thread) list and return the correct struct */
-  for (e = list_begin (&cur->fds); e != list_end (&cur->fds); e = list_next (e))
-  {
-    printf ("i = %d\n", i);
-    temp_fd_struct = list_entry (e, struct file_desc, elem);
-    if (temp_fd_struct->fd == fd) printf ("ayyyy lmao we found the right one apparently\n");
-    if (temp_fd_struct->fd == fd) return temp_fd_struct;
-  }
-  /* if we get this far, we shouldn't return, we should just exit since we can't do what we intended */
+  /* we're done, let's get out of here */
   thread_exit ();
 }
 
-static int sys_write (int fd, void *usrc_, unsigned size)
+/* per specs: Writes size bytes from buffer to open file fd. Right now, just writes
+ * everything to STDOUT with putbuf (as suggested in the specs) */
+static int sys_write (int fd, void *buffer, unsigned size)
 {
+  /* check that we're not STDOUT - if not, get the correct fd struct with get_fd_struct */
+  //something like struct file_desc fd_struct = get_fd_struct (fd);  ??
+  //after that, I don't yet know how to write to that file
 
-  printf ("sys_write happens so don't even worry about it bro\n");
-  int byte_count = 0;             /* keeps track of how many bytes we've written */
-  struct file_desc *fd_struct = NULL;
-  uint8_t *usrc = usrc_;
-
-  /* check that we're not STDOUT - if not, get the correct fd struct with find_fd */
-  //if (fd != 1) fd_struct = find_fd (fd);
-
-  printf ("just making sure - we don't get this far in sys_write (past find_id)\n");
-
-  /* get mutex on the file system */
+  /* get mutex on the file system - not entirely sure if this is necessary for putbuf but
+   * it should be when we try to write to files that aren't STDOUT */
   lock_acquire (&filesys_lock);
   
-  while (size > 0)
-  {
-    /* get the amount of pages left */
-    size_t page_left = PGSIZE - pg_ofs (usrc);
-    size_t write_amt = size < page_left ? size : page_left;
-    off_t retval;
+  /* we're good to go, let's write. NOTE: pufbuf (defined in lib/kernel/console.c writes
+   * exclusively to the console so there's no chance that this is gonna write to a file. ever. */
+  putbuf (buffer, size);
 
-    /* check that we're allowed to write to this page (as described in design doc */
-    if (!verify_user (usrc))
-    {
-      /* if we fail this check, we better get out of here quick */
-      lock_release (&filesys_lock);
-      thread_exit ();
-    }
-    
-    /* we're good to go, let's write */
-//    if (fd == 1)
-//    {
-//      putbuf (usrc, write_amt);
-//      retval = write_amt;
-//    }
-//    else
-//    {
-      retval = file_write (fd_struct->f, usrc, write_amt);
-//    }
-    if (retval < 0)
-    {
-      if (byte_count == 0) byte_count = -1;
-      break;
-    }
-    byte_count += retval;
-
-    /* if it was a short write we're done here */
-    if (retval != (off_t) write_amt) break;
-
-    /* advance to the next block to write */
-    usrc += retval;
-    size -= retval;
-  }
   lock_release (&filesys_lock);
-  return byte_count;
+  return size;
 }
 
 static void sys_halt (void)
@@ -325,4 +260,23 @@ static unsigned sys_tell (int fd)
 //close
 static void sys_close (int fd)
 {
+}
+
+
+/* this function searches through the current thread's fd list and returns the one
+ * that matches the given argument fd (file descriptor) */
+static struct file_desc* get_fd_struct (int fd)
+{
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+  struct file_desc* temp_fd_struct;
+  int i = 0;
+  /* iterate through the file descriptor (of current thread) list and return the correct struct */
+  for (e = list_begin (&cur->fds); e != list_end (&cur->fds); e = list_next (e))
+  {
+    temp_fd_struct = list_entry (e, struct file_desc, elem);
+    if (temp_fd_struct->fd == fd) return temp_fd_struct;
+  }
+  /* if we get this far, we shouldn't return, we should just exit since we can't do what we intended */
+  thread_exit ();
 }

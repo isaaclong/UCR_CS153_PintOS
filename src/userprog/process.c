@@ -71,7 +71,9 @@ push (uint8_t *kpage, size_t *ofs, const void *buf, size_t size)
 void reverse_args (int argc, char **argv)
 {
   int i;
-  for (i = argc - 1; i > (argc - 1) / 2; --i) {
+  /* from the front [0] to the middle [(argc - 1) / 2], change the order of the args */
+  for (i = 0; i <= (argc - 1) / 2; ++i) {
+    /* simple swap function, but it looks sorta complex */
     char *tmp = argv[i];
     argv[i]   = argv[(argc - 1) - i];
     argv[(argc - 1) - i] = tmp;
@@ -152,17 +154,19 @@ start_process (void *exec_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (exec->file_name, &if_.eip, &if_.esp);  //file_name become exec->file_name
+  success = load (exec->file_name, &if_.eip, &if_.esp);  //file_name became exec->file_name
 
   /* PROJECT 2 */
   /* since we create the process with thread_create in process_execute, we have to 
    * deal with allocating memory for process_info here */
   if (success)
   {
-    /* the following line allocates memory for the process_info struct of the executing thread */
-    exec->process_info = thread_current ()->process_info = malloc (sizeof (*exec->process_info));
+    /* the following lines allocate memory for the process_info struct of the executing thread */
+    thread_current ()->process_info = malloc (sizeof (*exec->process_info));
+    exec->process_info = thread_current ()->process_info;
+
     /* since we initialize process_info to NULL, if it's still NULL then it's not a success */
-    success = NULL != exec->process_info;
+    success = (NULL != exec->process_info);
   }
   
   /* we also have to initialize process_into since it's the first time it is in use */
@@ -171,7 +175,7 @@ start_process (void *exec_)
     lock_init (&exec->process_info->lock);
     exec->process_info->tid = thread_current ()->tid;
     exec->process_info->alive_count = 2;         /* 2 -> both parent and child are alive at this point */
-    exec->process_info->exit_status = -1;        /* -1 indicates it's alive for now */
+    exec->process_info->exit_status = -1;        /* -1 indicates failure (it'll be set later) */
     sema_init (&exec->process_info->alive, 0);
   }
 
@@ -197,20 +201,6 @@ start_process (void *exec_)
   NOT_REACHED ();
 }
 
-/* PROJECT 2: since we used malloc for our process_info, we have to free it as well */
-void free_info (struct process_info *pi)
-{
-  /* before we can free it, we have to check if the processes are alive or not */
-  int temp_alive_count;
-  /* ensure mutex on the count */
-  lock_acquire (&pi->lock);
-  /* we have to use this temp variable to work with the locks */
-  temp_alive_count = --pi->alive_count;
-  lock_release (&pi->lock);
-  sema_up (&pi->alive);          /* it was initialized to 0, so we up it here */
-
-  if (temp_alive_count == 0) free (pi);
-}
 
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
@@ -221,6 +211,12 @@ void free_info (struct process_info *pi)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
+/* UPDATE: now this goes through every child of the current process
+ * and finds the one matching the passed-in child_tid. If it is found,
+ * it indicates that the child is no longer alive and removes it from
+ * the child list. This differs from the suggested implementation in
+ * that is uses a semaphore to tell when the kid has exited. */
+
 int
 process_wait (tid_t child_tid) 
 {
@@ -236,7 +232,9 @@ process_wait (tid_t child_tid)
     struct process_info *kid = list_entry (kids, struct process_info, elem);
     if (child_tid == kid->tid)
     {
+      /* tell the parent that the child is now not running */
       sema_down (&kid->alive);
+      /* remove it from the child list */
       list_remove (kids);
       return kid->exit_status;
     }
@@ -251,7 +249,7 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
   /* PROJECT 2: get some list elems going */
-  struct list_elem *e, *next;
+  struct list_elem *le, *next;
 
   /* close the exec so that we can write */
   file_close (cur->executable);
@@ -260,17 +258,18 @@ process_exit (void)
   {
     /* grab the struct temporarily so we can free it */
     struct process_info *pi = cur->process_info;
+    /* need this for tests to pass (gives exit status of processes */
     printf ("%s: exit(%d)\n", cur->name, pi->exit_status);
     /* release the process_info struct */
     free_info (pi);
   }
 
   /* destroy all the child_list entries */
-  for (e = list_begin (&cur->children); e != list_end (&cur->children); e = next)
+  for (le = list_begin (&cur->children); le != list_end (&cur->children); le = next)
   {
     /* get the process info of each child, advance next with list_remove, and free the entry */
-    struct process_info *pi = list_entry (e, struct process_info, elem);
-    next = list_remove (e);
+    struct process_info *pi = list_entry (le, struct process_info, elem);
+    next = list_remove (le);
     free_info (pi);
   }
 
@@ -393,7 +392,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
   struct file *file = NULL;
   off_t file_ofs;
   bool success = false;
-  char* charPointer;  //added for parsing
+//  char* charPointer;  //added for parsing
   int i;
 
   /* Allocate and activate page directory. */
@@ -408,15 +407,15 @@ load (const char *cmd_line, void (**eip) (void), void **esp)  //change file name
   char *parsed_args[MAX_ARGS];
   i = 0;
 
-  
-  while (*cmd_line == ' ') cmd_line++;
+  /* copy all of cmd_line into file_name */
   strlcpy (file_name, cmd_line, sizeof (file_name));
-  charPointer = strchr (file_name, ' ');
+  /* get the pointer to the first space character in the string */
+  char *charPointer = strchr (file_name, ' ');
+  /* set the pointer that we found */
   if (charPointer != NULL) *charPointer = '\0';
 
   file = filesys_open (file_name);
   t->executable = file;
-  
 
   // first call to strtok_r returns first argument
   // subsequent calls return subsequent arguments until NULL which 
@@ -783,4 +782,19 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+/* PROJECT 2: since we used malloc for our process_info, we have to free it as well */
+void free_info (struct process_info *pi)
+{
+  /* before we can free it, we have to check if the processes are alive or not */
+  int temp_alive_count;
+  /* ensure mutex on the count */
+  lock_acquire (&pi->lock);
+  /* we have to use this temp variable to work with the locks */
+  temp_alive_count = --pi->alive_count;
+  lock_release (&pi->lock);
+  sema_up (&pi->alive);          /* it was initialized to 0, so we up it here */
+
+  if (temp_alive_count == 0) free (pi);
 }
