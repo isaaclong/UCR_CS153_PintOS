@@ -224,6 +224,12 @@ static void sys_halt (void)
 //exec
 static int sys_exec (const char *cmd_line) /* this int should be pid_t but it wouldn't compile */
 {
+  if(cmd_line == NULL || cmd_line == "" || !verify_user(cmd_line)) sys_exit(-1);
+
+  lock_acquire (&filesys_lock);
+  int pid = process_execute(cmd_line);
+  lock_release (&filesys_lock);
+  return pid;
 }
 //wait
 static int sys_wait (int pid)              /* so should this one */
@@ -232,6 +238,12 @@ static int sys_wait (int pid)              /* so should this one */
 //create
 static bool sys_create (const char *file, unsigned initial_size)
 {
+  if (file == NULL || file == "" || !verify_user(file)) sys_exit(-1); 
+
+  lock_acquire (&filesys_lock);
+  bool wasCreated = filesys_create (file, (off_t) initial_size);
+  lock_release (&filesys_lock);
+  return wasCreated;
 }
 //remove
 static bool sys_remove (const char *file)
@@ -240,6 +252,30 @@ static bool sys_remove (const char *file)
 //open
 static int sys_open (const char *file)
 {
+  if (file == NULL || !verify_user(file)) sys_exit(-1);
+  if (file == "") sys_exit(0);
+
+  lock_acquire (&filesys_lock);
+  struct file *f = filesys_open(file);
+
+  if (f == NULL) sys_exit(0);
+
+  //int fd = &(&(*f).inode).magic; // is magic the correct number to return?
+  struct thread *cur = thread_current ();
+  int fd = cur->next_fd;
+  fd++;
+  
+  struct file_desc fd_struct;
+  fd_struct.fd = fd;
+  fd_struct.f = f;
+ // fds
+  
+  struct list *fd_list = &(cur->fds);
+  struct list_elem *e = &(fd_struct.elem);
+  list_push_back (fd_list, e);
+
+  lock_release (&filesys_lock); 
+  return fd;
 }
 //filesize
 static int sys_filesize (int fd)
@@ -257,6 +293,7 @@ static int sys_filesize (int fd)
 //read
 static int sys_read (int fd, void *buffer, unsigned size)
 {
+  
 }
 //seek
 /* check out file_seek, probably does what we want here */
@@ -274,6 +311,7 @@ static unsigned sys_tell (int fd)
 //close
 static void sys_close (int fd)
 {
+  
 }
 
 

@@ -139,7 +139,7 @@ process_execute (const char *file_name)
 /* A thread function that loads a user process and starts it
    running. */
 /* PROJECT 2: changed how this function works so that it uses the exec_helper structs 
- *  (it's just one more layer of indirection, what could go wrong?) */
+ *  (it's just one more layer of indirection, what could go wrong?) <-- lol*/
 static void
 start_process (void *exec_)
 {
@@ -168,7 +168,7 @@ start_process (void *exec_)
     success = (NULL != exec->process_info);
   }
   
-  /* we also have to initialize process_into since it's the first time it is in use */
+  /* we also have to initialize process_info since it's the first time it is in use */
   if (success)
   {
     lock_init (&exec->process_info->lock);
@@ -178,7 +178,7 @@ start_process (void *exec_)
     sema_init (&exec->process_info->alive, 0);
   }
 
-  /* alert that parent thread that the loading has happened. */
+  /* alert the parent thread that the loading has happened. */
   exec->success = success;
   /* up the semaphore that we downed in process_execute */
   sema_up (&exec->load_done);       /* the helper really helps here */
@@ -370,7 +370,7 @@ struct Elf32_Phdr
 #define PF_R 4          /* Readable. */
 
 /* PROJECT 2 */
-#define MAX_ARGS 3
+#define MAX_ARGS 25
 
 static bool setup_stack (void **esp, char *cmd_line);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
